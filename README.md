@@ -29,8 +29,6 @@ O login usa Device Code Grant e pede `chat:read` e `chat:edit`, exigidos pela co
 
 ## Canais e prioridade
 
-Em uma instalação nova, os canais iniciais aparecem nesta ordem: `gglippe`, `macabeel`, `dirmo1`, `neegannnn`, `lugontv`, `stigalzera`, `raku_m` e `daldreak`. Cada usuário pode removê-los ou cadastrar outros.
-
 Canais ao vivo ficam no topo da lista e têm prioridade para as cinco vagas de cada conta. Entre canais no mesmo estado, o app conserva a ordem cadastrada. A opção **Somente ao vivo** impede conexões com canais offline. O status online é consultado uma vez por minuto por um serviço experimental de terceiros e pode atrasar ou falhar.
 
 ## Dados e limitações
