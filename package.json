@@ -1,0 +1,13 @@
+{
+  "name": "idle-chats-irc-v2",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Maintain Twitch chat presence using IRC connections.",
+  "main": "src/irc-main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.7.2"
+  }
+}
