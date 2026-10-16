@@ -112,7 +112,10 @@ function renderAccounts() {
     const pill = document.createElement("span");
     pill.className = "state-pill";
     pill.dataset.state = account.connectionState;
-    pill.textContent = state.running ? formatAccountState(account) : "Pronta";
+    pill.textContent = !account.authenticated || state.running || account.connectionState === "reconnecting"
+      ? formatAccountState(account)
+      : "Pronta";
+    pill.title = account.detail || pill.textContent;
     row.append(identity, pill, makeButton("×", "quiet remove", async () => {
       try { state = await window.idleChats.removeAccount(account.id); render(); }
       catch (error) { reportError(error); }

@@ -154,7 +154,7 @@ function publicState() {
         displayName: account.displayName,
         avatar: account.avatar || "",
         authenticated: !account.needsLogin && Boolean(account.accessToken),
-        connectionState: running ? state.state : "stopped",
+        connectionState: running || state.state === "authentication-error" || state.state === "reconnecting" ? state.state : "stopped",
         detail: state.detail,
         joinedChannels: state.joinedChannels,
         targetChannels: running ? desired.length : 0
@@ -216,43 +216,71 @@ function attachClient(account) {
     setAccountState(account.id, { joinedChannels: current.joinedChannels.filter((item) => item !== channel) });
   });
   client.on("authentication-error", (detail) => {
-    account.needsLogin = true;
     client.disconnect();
     clients.delete(account.id);
-    setAccountState(account.id, { state: "authentication-error", detail });
+    setAccountState(account.id, { state: "reconnecting", detail: `${detail} Renovando a sessão…`, joinedChannels: [] });
+    void renewAccountToken(account.id);
   });
   client.setDesiredChannels(desiredChannelsFor(account.id));
   client.connect();
   scheduleTokenRefresh(account.id);
 }
 
-function scheduleTokenRefresh(accountId) {
+function scheduleTokenRefresh(accountId, delayOverride) {
   const account = accounts.find((item) => item.id === accountId);
   if (!account || !account.expiresAt) return;
   clearTimeout(account.refreshTimer);
-  const delay = Math.max(20_000, account.expiresAt - Date.now() - 5 * 60_000);
+  const delay = Number.isFinite(delayOverride)
+    ? Math.max(5_000, delayOverride)
+    : Math.max(20_000, account.expiresAt - Date.now() - 5 * 60_000);
   account.refreshTimer = setTimeout(() => renewAccountToken(accountId), delay);
   account.refreshTimer.unref?.();
 }
 
+function requiresUserAuthorization(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return code === "missing_scopes"
+    || /^http_40[013]$/.test(code)
+    || /invalid refresh token|invalid_grant|revoked|unauthorized/.test(`${code} ${message}`);
+}
+
 async function renewAccountToken(accountId) {
   const account = accounts.find((item) => item.id === accountId);
-  if (!account || !account.refreshToken) return;
+  if (!account || !account.refreshToken || account.needsLogin || account.refreshing) return;
+  account.refreshing = true;
   try {
     const tokens = await refreshToken(account.clientId || clientId, account.refreshToken);
     account.accessToken = tokens.access_token;
     account.refreshToken = tokens.refresh_token;
     account.expiresAt = Date.now() + (Number(tokens.expires_in) || 14_400) * 1000;
     account.needsLogin = false;
+    account.refreshAttempts = 0;
     await saveAccounts();
     if (running) attachClient(account);
-    else scheduleTokenRefresh(accountId);
+    else {
+      setAccountState(accountId, { state: "stopped", detail: "Sessão renovada.", joinedChannels: [] });
+      scheduleTokenRefresh(accountId);
+    }
   } catch (error) {
-    account.needsLogin = true;
-    const client = clients.get(accountId);
-    client?.disconnect();
-    clients.delete(accountId);
-    setAccountState(accountId, { state: "authentication-error", detail: `A sessão expirou. Reconecte a conta. (${error.message})` });
+    if (requiresUserAuthorization(error)) {
+      account.needsLogin = true;
+      clearTimeout(account.refreshTimer);
+      const client = clients.get(accountId);
+      client?.disconnect();
+      clients.delete(accountId);
+      setAccountState(accountId, { state: "authentication-error", detail: `A Twitch invalidou a sessão. Reconecte esta conta. (${error.message})`, joinedChannels: [] });
+    } else {
+      account.refreshAttempts = (account.refreshAttempts || 0) + 1;
+      const delay = Math.min(5 * 60_000, 15_000 * (2 ** Math.min(account.refreshAttempts - 1, 4)));
+      scheduleTokenRefresh(accountId, delay);
+      setAccountState(accountId, {
+        state: "reconnecting",
+        detail: `Falha temporária ao renovar a sessão. Nova tentativa em ${Math.round(delay / 1000)}s. (${error.message})`
+      });
+    }
+  } finally {
+    account.refreshing = false;
   }
 }
 
@@ -512,8 +540,14 @@ async function restoreAccounts() {
       await saveAccounts();
       scheduleTokenRefresh(account.id);
     } catch (error) {
-      account.needsLogin = true;
-      accountStates.set(account.id, { state: "authentication-error", detail: `Reconecte esta conta Twitch. ${error.message}`, joinedChannels: [] });
+      if (requiresUserAuthorization(error)) {
+        account.needsLogin = true;
+        accountStates.set(account.id, { state: "authentication-error", detail: `Reconecte esta conta Twitch. ${error.message}`, joinedChannels: [] });
+      } else {
+        account.needsLogin = false;
+        accountStates.set(account.id, { state: "reconnecting", detail: `Falha temporária ao verificar sessão; o app tentará renovar novamente. (${error.message})`, joinedChannels: [] });
+        scheduleTokenRefresh(account.id, 30_000);
+      }
     }
   }
   broadcastState();

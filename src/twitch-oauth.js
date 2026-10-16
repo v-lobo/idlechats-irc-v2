@@ -24,6 +24,27 @@ async function postForm(url, fields) {
   return body;
 }
 
+async function postUrlEncoded(url, fields) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams(fields),
+    signal: AbortSignal.timeout(15_000)
+  });
+  let body;
+  try { body = await response.json(); }
+  catch { body = {}; }
+  if (!response.ok) {
+    const error = new Error(body.message || body.error_description || body.error || `Twitch OAuth respondeu HTTP ${response.status}.`);
+    error.code = body.message || body.error || `http_${response.status}`;
+    throw error;
+  }
+  return body;
+}
+
 function validateClientId(clientId) {
   const normalized = (clientId || "").trim();
   if (!CLIENT_ID_PATTERN.test(normalized)) throw new Error("Informe um Client ID válido do Twitch Developer Console.");
@@ -59,7 +80,7 @@ async function pollDeviceToken(clientId, deviceCode) {
 }
 
 async function refreshToken(clientId, refresh) {
-  return postForm("https://id.twitch.tv/oauth2/token", {
+  return postUrlEncoded("https://id.twitch.tv/oauth2/token", {
     client_id: validateClientId(clientId),
     grant_type: "refresh_token",
     refresh_token: refresh
@@ -104,7 +125,11 @@ async function getUserProfile(clientId, accessToken) {
 function ensureChatScopes(scopes) {
   const available = new Set(Array.isArray(scopes) ? scopes : []);
   const missing = REQUESTED_SCOPES.filter((scope) => !available.has(scope));
-  if (missing.length) throw new Error(`A conta não autorizou os escopos IRC necessários: ${missing.join(", ")}. Remova e conecte novamente.`);
+  if (missing.length) {
+    const error = new Error(`A conta não autorizou os escopos IRC necessários: ${missing.join(", ")}. Remova e conecte novamente.`);
+    error.code = "missing_scopes";
+    throw error;
+  }
 }
 
 module.exports = {

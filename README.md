@@ -34,6 +34,7 @@ Canais ao vivo ficam no topo da lista e têm prioridade para as cinco vagas de c
 ## Dados e limitações
 
 - As sessões e os canais ficam na pasta de dados local `IdleChats IRC V2`; não são compartilhados entre usuários nem enviados a este repositório.
+- O app renova os tokens antes de expirarem e repete falhas temporárias de rede. Como o app Twitch usa Device Code Grant público, a Twitch pode invalidar refresh tokens após 30 dias sem uso; nesse caso, a conta precisa ser autorizada novamente.
 - Cada conta Twitch precisa autorizar individualmente o app.
 - O indicador de JOIN IRC confirma a entrada no chat; um jogo ou serviço externo pode demorar alguns minutos para reconhecer a presença.
 - Minimizar na bandeja mantém as conexões em execução. Fechar completamente o app desconecta as contas.
