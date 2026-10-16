@@ -435,7 +435,7 @@ function createTray() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 600, height: 600, minWidth: 420, minHeight: 480, resizable: true,
+    width: 507, height: 613, minWidth: 420, minHeight: 480, resizable: true,
     title: "IdleChats IRC V2", backgroundColor: "#f8f7fb",
     webPreferences: { preload: path.join(__dirname, "irc-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });

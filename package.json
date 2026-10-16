@@ -1,6 +1,6 @@
 {
   "name": "idle-chats-irc-v2",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "private": true,
   "description": "Maintain Twitch chat presence using IRC connections.",
   "main": "src/irc-main.js",
