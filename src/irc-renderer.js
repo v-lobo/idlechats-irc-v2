@@ -25,7 +25,7 @@ const notice = document.querySelector("#notice");
 const connectionIndicator = document.querySelector("#connection-indicator");
 const runtimeMetrics = document.querySelector("#runtime-metrics");
 const appVersion = document.querySelector("#app-version");
-const checkUpdatesButton = document.querySelector("#check-updates");
+const checkUpdatesButton = document.querySelector("#app-version");
 const updateStatus = document.querySelector("#update-status");
 let state = { channels: [], accounts: [], pendingLogins: [], running: false, preferences: {} };
 let updateAvailable = false;
@@ -156,7 +156,7 @@ function renderChannels() {
 }
 
 function render() {
-  appVersion.textContent = `v${state.version || "—"}`;
+  if (!updateAvailable) appVersion.textContent = `v${state.version || "—"}`;
   if (state.pendingLogins?.length) accountsSection.open = true;
   toggleButton.disabled = !state.channels.length || !state.accounts.some((account) => account.authenticated);
   toggleButton.textContent = state.running ? "Parar conexões" : "Iniciar IRC";
@@ -240,15 +240,21 @@ checkUpdatesButton.addEventListener("click", async () => {
       const result = await window.idleChats.checkForUpdates();
       updateAvailable = result.updateAvailable;
       if (!result.releaseExists) {
+        appVersion.textContent = `v${result.currentVersion}`;
         updateStatus.textContent = "Ainda não há versão publicada.";
       } else if (result.updateAvailable) {
-        updateStatus.textContent = `Nova versão ${result.latestVersion} disponível.`;
-        checkUpdatesButton.textContent = "Baixar atualização";
+        appVersion.textContent = `v${result.currentVersion} → v${result.latestVersion} 💫`;
+        checkUpdatesButton.title = "Clique novamente para abrir a atualização no GitHub";
+        updateStatus.textContent = "Nova versão disponível. Clique no texto novamente para baixar.";
       } else {
+        appVersion.textContent = `v${result.currentVersion} 🆗`;
         updateStatus.textContent = "Você está na versão mais recente.";
       }
     }
   } catch (error) {
+    appVersion.textContent = `v${state.version || "—"}`;
+    updateAvailable = false;
+    checkUpdatesButton.title = "Clique para verificar atualizações";
     updateStatus.textContent = `Falha ao verificar: ${error.message}`;
   } finally {
     checkUpdatesButton.disabled = false;
