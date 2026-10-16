@@ -10,6 +10,7 @@ h1, h2, p { margin: 0; }
 .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: #fff; background: #9147ff; font-size: 19px; font-weight: 800; }
 h1 { font-size: 15px; letter-spacing: -.3px; }
 h1 span { color: #7540cb; font-size: 10px; }
+.version-badge { display: inline-block; padding: 2px 5px; border: 1px solid #e9e1f4; border-radius: 999px; color: #81768f; background: #fff; font-size: 8px; font-weight: 500; vertical-align: 1px; }
 .brand p { margin-top: 2px; color: #898292; font-size: 10px; }
 .indicator { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid #e6e1ec; border-radius: 999px; color: #827b8d; background: #fff; font-size: 9px; }
 .indicator i { width: 6px; height: 6px; border-radius: 50%; background: #aaa4b4; }

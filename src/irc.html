@@ -10,7 +10,7 @@
 <body>
   <main class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">T</span><div><h1>IdleChats <span>IRC V2</span></h1><p>Presença nos chats em segundo plano</p></div></div>
+      <div class="brand"><span class="brand-mark">T</span><div><h1>IdleChats <span>IRC V2</span> <small id="app-version" class="version-badge">v—</small></h1><p>Presença nos chats em segundo plano</p></div></div>
       <span id="connection-indicator" class="indicator" data-running="false"><i></i><span>Parado</span></span>
     </header>
 
@@ -54,7 +54,7 @@
       <label><input id="minimize-to-tray" type="checkbox"><span>Minimizar na bandeja</span></label>
     </section>
     <p id="notice" class="notice" role="status"></p>
-    <footer><p id="runtime-metrics" class="runtime-metrics">Memória medindo · CPU medindo · 0 presenças IRC</p><div class="updates"><span id="app-version">v—</span><button id="check-updates" class="update-button" type="button">Verificar atualização</button><span id="update-status" role="status"></span></div></footer>
+    <footer><p id="runtime-metrics" class="runtime-metrics">Memória medindo · CPU medindo · 0 presenças IRC</p><div class="updates"><button id="check-updates" class="update-button" type="button">Verificar atualização</button><span id="update-status" role="status"></span></div></footer>
   </main>
   <script src="irc-renderer.js"></script>
 </body>
