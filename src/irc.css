@@ -80,4 +80,8 @@ details[open] > summary::before { transform: rotate(90deg); }
 .settings-strip input { width: 13px; height: 13px; margin: 0; accent-color: #9147ff; }
 .notice { min-height: 13px; margin-top: 5px; color: #6a4c95; font-size: 9px; }
 .runtime-metrics { padding: 2px 0 6px; color: #847c90; font-size: 9px; }
+.updates { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 5px 0 2px; border-top: 1px solid #f0edf3; color: #847c90; font-size: 9px; }
+.update-button { padding: 3px 7px; border: 1px solid #e7e1eb; border-radius: 6px; color: #7042ad; background: #fff; font-size: 9px; }
+.update-button:hover:not(:disabled) { background: #f5efff; }
+.update-button:disabled { cursor: default; opacity: .55; }
 @media (max-width: 560px) { body { min-width: 360px; } .app-shell { padding: 10px; } .state-pill { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }

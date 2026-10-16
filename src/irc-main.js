@@ -17,6 +17,7 @@ const MAX_CHANNELS_PER_ACCOUNT = 5;
 const LIVE_CHECK_INTERVAL_MS = 60_000;
 const DEFAULT_CHANNELS = ["gglippe", "macabeel", "dirmo1", "neegannnn", "lugontv", "stigalzera", "raku_m", "daldreak"];
 const TWITCH_CLIENT_ID = "vvlqbh6sdj5gl6ww10drrerv60rwkx";
+const GITHUB_RELEASES_API = "https://api.github.com/repos/v-lobo/idlechats-irc-v2/releases/latest";
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 const channelsFile = () => path.join(app.getPath("userData"), "channels.json");
 const accountsFile = () => path.join(app.getPath("userData"), "accounts.json");
@@ -133,6 +134,7 @@ function targetChannels() {
 function publicState() {
   const desired = targetChannels();
   return {
+    version: app.getVersion(),
     channels: priorityOrderedChannels().map(({ name }) => {
       const live = liveStates.get(name.toLowerCase()) || { liveStatus: "unchecked", liveDetail: "", checkedAt: null };
       return {
@@ -166,6 +168,38 @@ function publicState() {
     runtimeMetrics: { ...runtimeMetrics },
     preferences: { ...preferences },
     liveCheckedAt: [...liveStates.values()].reduce((latest, item) => item.checkedAt && (!latest || item.checkedAt > latest) ? item.checkedAt : latest, null)
+  };
+}
+
+function compareVersions(left, right) {
+  const parse = (value) => String(value).replace(/^v/i, "").split(".").map((part) => Number.parseInt(part, 10));
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0);
+  }
+  return 0;
+}
+
+async function getLatestRelease() {
+  const response = await fetch(GITHUB_RELEASES_API, {
+    headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "IdleChats-IRC-V2" },
+    signal: AbortSignal.timeout(10_000)
+  });
+  if (response.status === 404) return { currentVersion: app.getVersion(), latestVersion: null, updateAvailable: false, releaseExists: false };
+  if (!response.ok) throw new Error(`GitHub respondeu HTTP ${response.status}.`);
+  const release = await response.json();
+  const match = typeof release.tag_name === "string" && release.tag_name.match(/^v?(\d+)\.(\d+)\.(\d+)$/i);
+  const releaseUrl = typeof release.html_url === "string" ? new URL(release.html_url) : null;
+  if (!match || releaseUrl?.origin !== "https://github.com" || releaseUrl.pathname !== "/v-lobo/idlechats-irc-v2/releases/tag/" + release.tag_name) {
+    throw new Error("A versão mais recente do GitHub tem dados inválidos.");
+  }
+  const latestVersion = `${match[1]}.${match[2]}.${match[3]}`;
+  return {
+    currentVersion: app.getVersion(),
+    latestVersion,
+    updateAvailable: compareVersions(latestVersion, app.getVersion()) > 0,
+    releaseExists: true
   };
 }
 
@@ -554,6 +588,14 @@ async function restoreAccounts() {
 }
 
 ipcMain.handle("get-state", () => publicState());
+ipcMain.handle("check-for-updates", () => getLatestRelease());
+ipcMain.handle("open-latest-release", async () => {
+  const release = await getLatestRelease();
+  if (!release.releaseExists) throw new Error("Ainda não há uma versão publicada no GitHub.");
+  if (!release.updateAvailable) throw new Error("Este app já está na versão mais recente.");
+  await shell.openExternal(`https://github.com/v-lobo/idlechats-irc-v2/releases/tag/v${release.latestVersion}`);
+  return release;
+});
 ipcMain.handle("begin-login", startAccountLogin);
 ipcMain.handle("cancel-login", (_event, id) => cancelAccountLogin(id));
 ipcMain.handle("remove-account", async (_event, id) => {

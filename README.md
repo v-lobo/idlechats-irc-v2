@@ -39,6 +39,13 @@ Canais ao vivo ficam no topo da lista e têm prioridade para as cinco vagas de c
 - O indicador de JOIN IRC confirma a entrada no chat; um jogo ou serviço externo pode demorar alguns minutos para reconhecer a presença.
 - Minimizar na bandeja mantém as conexões em execução. Fechar completamente o app desconecta as contas.
 - O rodapé mostra memória privada aproximada dos processos do app, uso agregado de CPU e presenças IRC confirmadas.
+- O rodapé também mostra a versão instalada. **Verificar atualização** consulta as versões publicadas no GitHub; se houver uma mais nova, **Baixar atualização** abre a página da versão.
+
+## Atualizar o app
+
+As atualizações são instaladas manualmente. Na página aberta pelo app, baixe **Source code (zip)** da versão mais recente e extraia os arquivos para a pasta do app, substituindo os arquivos da versão anterior. Em seguida, execute `Abrir IdleChats.vbs` novamente; se necessário, o lançador instala as dependências. Os dados locais (contas e canais) ficam em `%APPDATA%\IdleChats IRC V2` e não são substituídos pela atualização.
+
+O verificador usa as **Releases** deste repositório. Para publicar uma atualização, incremente a versão em `package.json` e crie uma Release no GitHub com a tag correspondente no formato `vMAJOR.MINOR.PATCH` (por exemplo, `v2.0.1`).
 
 ## Revogar acesso
 
