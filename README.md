@@ -42,3 +42,9 @@ Canais ao vivo ficam no topo da lista e têm prioridade para as cinco vagas de c
 ## Revogar acesso
 
 Remova a conta no app e, se desejar, revogue a autorização do IdleChats nas configurações de conexões da Twitch.
+
+### Se a instalação falhar
+
+O lançador precisa do **Node.js 22.12 ou posterior** e do npm. Instale a versão LTS pelo [site oficial do Node.js](https://nodejs.org/en/download/) e mantenha ativada a opção para adicionar o Node ao PATH. Depois, feche e abra novamente o lançador. Se o Node já estiver instalado e ainda não for encontrado, reinicie o Windows Explorer ou o computador para atualizar o PATH.
+
+Se a instalação do Electron falhar, consulte o arquivo `install-electron.log` na pasta do app. Ele contém os detalhes do erro de instalação ou download.
