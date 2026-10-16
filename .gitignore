@@ -9,6 +9,4 @@ npm-debug.log*
 !.env.example
 .DS_Store
 Thumbs.db
-install-electron.log
-node-version.tmp
 node-version.tmp
