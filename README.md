@@ -5,12 +5,12 @@ Aplicativo Electron para manter presença em chats Twitch usando uma conexão IR
 ## Requisitos
 
 - Windows 10 ou posterior
-- Node.js e npm
+- Node.js 22.12 ou posterior e npm
 - Internet para instalar o Electron e conectar à Twitch
 
 ## Iniciar
 
-Clone ou baixe este repositório e abra `Abrir IdleChats.vbs`. Na primeira execução, o lançador instala as dependências do `package-lock.json` e inicia o app. Também é possível executar:
+Clone ou baixe este repositório e abra `Abrir IdleChats.vbs`. Na primeira execução, o lançador instala as dependências do `package-lock.json` e inicia o app. Se a instalação falhar, consulte `install-electron.log` na pasta do app. Também é possível executar:
 
 ```powershell
 npm ci
