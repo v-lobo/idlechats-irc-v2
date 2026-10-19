@@ -7,7 +7,7 @@ const { randomUUID } = require("node:crypto");
 const { TwitchIrcClient } = require("./twitch-irc");
 const { writeJson, appendConnectionLog } = require("./local-files");
 const {
-  ensureChatScopes, getUserProfile, pollDeviceToken, refreshToken, requestDeviceCode, validateClientId, validateToken
+  ensureChatScopes, getUserProfile, isClientConfigurationError, pollDeviceToken, refreshToken, requestDeviceCode, validateClientId, validateToken
 } = require("./twitch-oauth");
 
 app.setName("IdleChats IRC V2");
@@ -19,7 +19,7 @@ const CHANNEL_PATTERN = /^[a-zA-Z0-9_]{1,25}$/;
 const MAX_CHANNELS_PER_ACCOUNT = 5;
 const LIVE_CHECK_INTERVAL_MS = 60_000;
 const DEFAULT_CHANNELS = ["gglippe", "macabeel", "dirmo1", "neegannnn", "lugontv", "stigalzera", "raku_m", "daldreak"];
-const TWITCH_CLIENT_ID = "vvlqbh6sdj5gl6ww10drrerv60rwkx";
+const TWITCH_CLIENT_ID = "mjqfe51tvku6pa0ymtkitjwlpi0x6k";
 const GITHUB_RELEASES_API = "https://api.github.com/repos/v-lobo/idlechats-irc-v2/releases/latest";
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 const channelsFile = () => path.join(app.getPath("userData"), "channels.json");
@@ -104,7 +104,12 @@ async function loadData() {
   for (const item of Array.isArray(savedAccounts) ? savedAccounts : []) {
     if (!item || typeof item.id !== "string" || typeof item.encryptedTokens !== "string") continue;
     try {
-      accounts.push({ id: item.id, login: item.login || "", displayName: item.displayName || item.login || "", avatar: item.avatar || "", clientId: item.clientId || clientId, ...decryptTokens(item.encryptedTokens) });
+      const account = { id: item.id, login: item.login || "", displayName: item.displayName || item.login || "", avatar: item.avatar || "", clientId: item.clientId || clientId, ...decryptTokens(item.encryptedTokens) };
+      if (account.clientId !== clientId) {
+        account.needsLogin = true;
+        accountStates.set(account.id, { state: "authentication-error", detail: "O cadastro Twitch do app foi atualizado. Use + para autorizar esta conta novamente.", joinedChannels: [] });
+      }
+      accounts.push(account);
     } catch (error) {
       console.error("Uma sessão Twitch não pôde ser descriptografada; será necessário autenticar novamente.", error.message);
       accounts.push({ id: item.id, login: item.login || "", displayName: item.displayName || item.login || "", avatar: item.avatar || "", clientId: item.clientId || clientId, accessToken: "", refreshToken: "", expiresAt: 0, needsLogin: true });
@@ -159,8 +164,8 @@ function publicState() {
         login: account.login,
         displayName: account.displayName,
         avatar: account.avatar || "",
-        authenticated: !account.needsLogin && Boolean(account.accessToken),
-        connectionState: running || state.state === "authentication-error" || state.state === "reconnecting" ? state.state : "stopped",
+        authenticated: !account.needsLogin && !account.configurationError && Boolean(account.accessToken),
+        connectionState: running || ["authentication-error", "configuration-error", "reconnecting"].includes(state.state) ? state.state : "stopped",
         detail: state.detail,
         joinedChannels: state.joinedChannels,
         targetChannels: running ? desired.length : 0
@@ -238,12 +243,12 @@ function setAccountState(id, next) {
 
 function desiredChannelsFor(accountId) {
   const account = accounts.find((item) => item.id === accountId);
-  if (!running || !account || account.needsLogin || !account.accessToken) return [];
+  if (!running || !account || account.needsLogin || account.configurationError || !account.accessToken) return [];
   return targetChannels();
 }
 
 function attachClient(account) {
-  if (isQuitting || !running || !account?.accessToken || !accounts.includes(account) || account.needsLogin || account.refreshing) return;
+  if (isQuitting || !running || !account?.accessToken || !accounts.includes(account) || account.needsLogin || account.configurationError || account.refreshing) return;
   if (account.tokenRejected || account.expiresAt <= Date.now()) {
     if (!account.refreshTimer) void renewAccountToken(account.id);
     return;
@@ -284,7 +289,7 @@ function attachClient(account) {
 
 function scheduleTokenRefresh(accountId, delayOverride) {
   const account = accounts.find((item) => item.id === accountId);
-  if (isQuitting || !account || !account.expiresAt) return;
+  if (isQuitting || !account || !account.expiresAt || account.configurationError || account.needsLogin) return;
   clearTimeout(account.refreshTimer);
   const delay = Number.isFinite(delayOverride)
     ? Math.max(5_000, delayOverride)
@@ -304,9 +309,22 @@ function requiresUserAuthorization(error) {
     || /invalid refresh token|invalid_grant|revoked|unauthorized/.test(`${code} ${message}`);
 }
 
+function pauseForClientConfiguration(account) {
+  account.configurationError = true;
+  clearTimeout(account.refreshTimer);
+  account.refreshTimer = null;
+  const client = clients.get(account.id);
+  clients.delete(account.id);
+  client?.disconnect();
+  setAccountState(account.id, {
+    state: "configuration-error", reason: "oauth-client-configuration", joinedChannels: [],
+    detail: "O cadastro Twitch do app exige Client Secret. O responsável pelo IdleChats precisa usar Client Type Public e publicar o Client ID correto."
+  });
+}
+
 async function renewAccountToken(accountId) {
   const account = accounts.find((item) => item.id === accountId);
-  if (!account || !account.refreshToken || account.needsLogin || account.refreshing) return;
+  if (!account || !account.refreshToken || account.needsLogin || account.configurationError || account.refreshing) return;
   account.refreshing = true;
   try {
     const tokens = await refreshToken(account.clientId || clientId, account.refreshToken);
@@ -331,7 +349,9 @@ async function renewAccountToken(accountId) {
     }
   } catch (error) {
     if (!accounts.includes(account)) return;
-    if (requiresUserAuthorization(error)) {
+    if (isClientConfigurationError(error)) {
+      pauseForClientConfiguration(account);
+    } else if (requiresUserAuthorization(error)) {
       account.needsLogin = true;
       clearTimeout(account.refreshTimer);
       const client = clients.get(accountId);
@@ -358,7 +378,7 @@ async function renewAccountToken(accountId) {
 function syncClients() {
   if (!running) return;
   for (const account of accounts) {
-    if (account.needsLogin || !account.accessToken || account.refreshing) continue;
+    if (account.needsLogin || account.configurationError || !account.accessToken || account.refreshing) continue;
     const client = clients.get(account.id);
     if (client) client.setDesiredChannels(desiredChannelsFor(account.id));
     else attachClient(account);
@@ -370,7 +390,7 @@ function recoverConnections(reason) {
   lastConnectionRecoveryAt = Date.now();
   logConnection("connection-recovery", { reason });
   for (const account of accounts) {
-    if (account.needsLogin || !account.accessToken || account.refreshing) continue;
+    if (account.needsLogin || account.configurationError || !account.accessToken || account.refreshing) continue;
     if (account.tokenRejected || account.expiresAt <= Date.now() + 60_000) {
       clearTimeout(account.refreshTimer);
       account.refreshTimer = null;
@@ -539,7 +559,16 @@ async function pollAccountLogin(pending) {
       await wait(interval, pending);
       if (pending.cancelled) return;
       try {
-        const tokens = await pollDeviceToken(pending.clientId, pending.deviceCode);
+        const issuedTokens = await pollDeviceToken(pending.clientId, pending.deviceCode);
+        if (!issuedTokens.refresh_token || !issuedTokens.access_token) throw new Error("A Twitch não retornou os tokens necessários para manter a sessão.");
+        // Confirm renewable authorization before saving; the activation URL alone
+        // does not reliably indicate whether the Twitch registration is Public.
+        let tokens;
+        try { tokens = await refreshToken(pending.clientId, issuedTokens.refresh_token); }
+        catch (error) {
+          if (isClientConfigurationError(error)) throw new Error("O cadastro Twitch do IdleChats precisa ter Client Type Public para renovar sessões. O responsável pelo app deve corrigir o Client ID integrado.");
+          throw error;
+        }
         const validation = await validateToken(tokens.access_token);
         ensureChatScopes(validation.scopes);
         if (!tokens.refresh_token || !tokens.access_token) throw new Error("A Twitch não retornou os tokens necessários para manter a sessão.");
@@ -557,6 +586,9 @@ async function pollAccountLogin(pending) {
           duplicate.refreshToken = tokens.refresh_token;
           duplicate.expiresAt = Date.now() + (Number(tokens.expires_in) || 14_400) * 1000;
           duplicate.needsLogin = false;
+          duplicate.configurationError = false;
+          duplicate.tokenRejected = false;
+          duplicate.refreshAttempts = 0;
         } else {
           accounts.push({ id: randomUUID(), login, displayName: profile.displayName || login, avatar: profile.avatar || "", clientId: pending.clientId, accessToken: tokens.access_token, refreshToken: tokens.refresh_token, expiresAt: Date.now() + (Number(tokens.expires_in) || 14_400) * 1000 });
         }
@@ -566,6 +598,7 @@ async function pollAccountLogin(pending) {
         pendingLogins.delete(pending.id);
         uiMessage = `Conta @${login} autorizada.`;
         if (running && linkedAccount) attachClient(linkedAccount);
+        else if (linkedAccount) setAccountState(linkedAccount.id, { state: "stopped", reason: "authorized", detail: "Conta autorizada. Pronta para iniciar IRC.", joinedChannels: [] });
         broadcastState();
         return;
       } catch (error) {
@@ -599,6 +632,7 @@ function cancelAccountLogin(id) {
 
 async function restoreAccounts() {
   for (const account of accounts) {
+    if (account.needsLogin) continue;
     if (!account.accessToken || !account.refreshToken) { account.needsLogin = true; continue; }
     try {
       let validation;
@@ -628,7 +662,9 @@ async function restoreAccounts() {
       await saveAccounts();
       scheduleTokenRefresh(account.id);
     } catch (error) {
-      if (requiresUserAuthorization(error)) {
+      if (isClientConfigurationError(error)) {
+        pauseForClientConfiguration(account);
+      } else if (requiresUserAuthorization(error)) {
         account.needsLogin = true;
         accountStates.set(account.id, { state: "authentication-error", detail: `Reconecte esta conta Twitch. ${error.message}`, joinedChannels: [] });
       } else {

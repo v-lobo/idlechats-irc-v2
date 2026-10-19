@@ -56,6 +56,7 @@ function formatLive(channel) {
 }
 
 function formatAccountState(account) {
+  if (account.connectionState === "configuration-error") return "Configuração Twitch";
   if (!account.authenticated) return "Precisa reconectar";
   if (account.connectionState === "connected") return `${account.joinedChannels.length} JOIN(s) IRC confirmado(s)`;
   if (account.connectionState === "connecting") return "Conectando…";
@@ -112,7 +113,7 @@ function renderAccounts() {
     name.textContent = account.displayName || account.login || "Conta Twitch";
     const detail = document.createElement("span");
     detail.textContent = `@${account.login || "conta"} · ${account.authenticated ? `${account.joinedChannels.length} presença(s) IRC` : "precisa reconectar"}`;
-    if (account.authenticated && ["connecting", "reconnecting"].includes(account.connectionState)) {
+    if (account.connectionState === "configuration-error" || account.authenticated && ["connecting", "reconnecting"].includes(account.connectionState)) {
       detail.textContent = `@${account.login} · ${account.detail || "Reconectando…"}`;
     }
     detail.title = account.detail || detail.textContent;
@@ -166,14 +167,17 @@ function render() {
   toggleButton.disabled = !state.channels.length || !state.accounts.some((account) => account.authenticated);
   toggleButton.textContent = state.running ? "Parar conexões" : "Iniciar IRC";
   const hasConnection = state.accounts.some((account) => account.authenticated && account.connectionState === "connected");
+  const hasConfigurationError = state.accounts.some((account) => account.connectionState === "configuration-error");
   connectionIndicator.dataset.running = String(state.running && hasConnection);
-  connectionIndicator.querySelector("span").textContent = state.running ? hasConnection ? "IRC ativo" : "Reconectando…" : "Parado";
+  connectionIndicator.querySelector("span").textContent = hasConfigurationError && !hasConnection ? "Configuração" : state.running ? hasConnection ? "IRC ativo" : "Reconectando…" : "Parado";
   const joined = state.accounts.reduce((total, account) => total + account.joinedChannels.length, 0);
   headline.textContent = state.running ? "IRC em segundo plano" : "Conexões de chat";
   subhead.textContent = `${joined} JOIN(s) IRC confirmado(s) · ${state.accounts.length} conta(s) · ${state.channels.length} canal(is).`;
   globalStatus.textContent = state.running
     ? "IRC confirma as entradas nos chats; o jogo pode levar alguns minutos para atualizar o bônus."
     : "Pronto para conectar. Nenhuma janela ou guia de chat será criada.";
+  if (hasConfigurationError) globalStatus.textContent = "O cadastro Twitch do app precisa usar Client Type Public. Aguarde a correção do responsável pelo IdleChats.";
+  else if (state.accounts.some((account) => account.connectionState === "authentication-error")) globalStatus.textContent = "Use + em Contas Twitch para autorizar novamente as contas indicadas.";
   if (state.message) notice.textContent = state.message;
   const metrics = state.runtimeMetrics || {};
   const memory = metrics.privateMb == null ? "medindo" : `${metrics.privateMb} MB privados`;

@@ -52,7 +52,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 .account-copy span, .channel-copy span, .pending-copy span { margin-top: 2px; color: #898292; font-size: 9px; }
 .state-pill { flex: 0 0 auto; color: #7d7588; font-size: 9px; }
 .state-pill[data-state="connected"], .state-pill[data-state="joined"] { color: #079767; }
-.state-pill[data-state="authentication-error"] { color: #bd4c32; }
+.state-pill[data-state="authentication-error"], .state-pill[data-state="configuration-error"] { color: #bd4c32; }
 .quiet { width: 24px; height: 24px; padding: 0; border: 1px solid #e7e1eb; border-radius: 6px; color: #a34d5d; background: white; font-size: 14px; }
 .pending-copy { flex: 1; min-width: 0; }
 .card { margin-top: 8px; }

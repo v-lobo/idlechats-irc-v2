@@ -4,8 +4,9 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { fakeClock, loadSource, flush } = require("./helpers.cjs");
+const { isClientConfigurationError } = require("../src/twitch-oauth");
 
-function setup(refreshToken) {
+function setup(refreshToken, savedAccounts = [], oauthOverrides = {}) {
   const clock = fakeClock();
   const created = [];
   const handlers = new Map();
@@ -13,7 +14,7 @@ function setup(refreshToken) {
   const app = Object.assign(new EventEmitter(), {
     setName() {}, setPath() {}, getPath: () => "unused-test-directory",
     requestSingleInstanceLock: () => true, whenReady: () => new Promise(() => {}),
-    getVersion: () => "2.0.5", getAppMetrics: () => [], quit() {}
+    getVersion: () => require("../package.json").version, getAppMetrics: () => [], quit() {}
   });
   class FakeClient extends EventEmitter {
     constructor() { super(); this.joinedChannels = new Set(); this.ready = false; created.push(this); }
@@ -25,13 +26,14 @@ function setup(refreshToken) {
   const source = loadSource("irc-main.js", {
     electron: {
       app, powerMonitor: new EventEmitter(), ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
-      safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value) }
+      safeStorage: { isEncryptionAvailable: () => true, encryptString: (value) => Buffer.from(value), decryptString: (value) => value.toString() }
     },
     "./twitch-irc": { TwitchIrcClient: FakeClient },
-    "./twitch-oauth": { refreshToken },
+    "./twitch-oauth": { refreshToken, isClientConfigurationError, ...oauthOverrides },
+    "node:fs/promises": { readFile: async (file) => JSON.stringify(file.endsWith("accounts.json") ? savedAccounts : file.endsWith("channels.json") ? [] : {}) },
     "./local-files": { writeJson: async (file, value) => { writes.push({ file, value }); }, appendConnectionLog: async () => {} }
   }, clock.globals, `
-    module.exports = { attachClient, renewAccountToken, syncClients, recoverConnections, stopChats, startChats, publicState,
+    module.exports = { attachClient, renewAccountToken, syncClients, recoverConnections, stopChats, startChats, publicState, loadData, restoreAccounts, pollAccountLogin, pendingLogins,
       clients, setAccounts(value) { accounts = value; running = true; }, setQuitting() { isQuitting = true; } };`);
   const accounts = Array.from({ length: 4 }, (_, index) => ({
     id: String(index), login: `example${index}`, accessToken: "oldtoken", refreshToken: "refresh",
@@ -114,4 +116,93 @@ test("revoked refresh tokens require reauthorization instead of endless reconnec
   assert.equal(accounts[0].needsLogin, true);
   assert.equal(source.clients.has(accounts[0].id), false);
   assert.equal(source.publicState().accounts[0].connectionState, "authentication-error");
+});
+
+test("missing client secret is a configuration error and is never retried as a network failure", async () => {
+  let requests = 0;
+  const { source, accounts, clock, created } = setup(async () => {
+    requests += 1;
+    throw Object.assign(new Error("missing client secret"), { code: "missing client secret", status: 400 });
+  });
+  source.setAccounts([accounts[0]]);
+  source.syncClients();
+  await source.renewAccountToken(accounts[0].id);
+  assert.equal(accounts[0].configurationError, true);
+  assert.equal(accounts[0].refreshTimer, null);
+  assert.equal(source.publicState().accounts[0].connectionState, "configuration-error");
+  assert.equal(source.publicState().accounts[0].authenticated, false);
+  source.syncClients();
+  source.recoverConnections("network-online");
+  clock.advance(600_000);
+  await flush();
+  assert.equal(requests, 1);
+  assert.equal(created.length, 1);
+  assert.equal(source.clients.size, 0);
+});
+
+test("accounts linked to the previous Client ID request reauthorization without losing their profiles", async () => {
+  let requests = 0;
+  const { source } = setup(async () => { requests += 1; return freshToken(); }, [{
+    id: "previous", login: "example", displayName: "Example", avatar: "https://example.invalid/avatar.png",
+    clientId: "previousclientid000000000000",
+    encryptedTokens: Buffer.from(JSON.stringify({ accessToken: "old", refreshToken: "refresh", expiresAt: 10_000_000 })).toString("base64")
+  }]);
+  await source.loadData();
+  await source.restoreAccounts();
+  source.syncClients();
+  assert.equal(requests, 0);
+  assert.equal(source.clients.size, 0);
+  const [account] = source.publicState().accounts;
+  assert.equal(account.displayName, "Example");
+  assert.equal(account.avatar, "https://example.invalid/avatar.png");
+  assert.equal(account.authenticated, false);
+  assert.equal(account.connectionState, "authentication-error");
+  assert.match(account.detail, /Use \+/);
+});
+
+test("reauthorizing an existing account clears previous errors without duplicating the profile", async () => {
+  const { source, accounts, clock } = setup(async (_clientId, refresh) => {
+    assert.equal(refresh, "issuedrefresh");
+    return freshToken();
+  }, [], {
+    pollDeviceToken: async () => ({ access_token: "issuedtoken", refresh_token: "issuedrefresh" }),
+    validateToken: async () => ({ login: "example0", scopes: ["chat:read", "chat:edit"] }),
+    ensureChatScopes() {}, getUserProfile: async () => ({ login: "example0", displayName: "Example" })
+  });
+  source.setAccounts([accounts[0]]);
+  accounts[0].needsLogin = true;
+  accounts[0].configurationError = true;
+  accounts[0].tokenRejected = true;
+  source.stopChats();
+  const pending = { id: "login", clientId: "newpublicclientid000000000000", deviceCode: "code", intervalMs: 1, expiresAt: clock.now() + 60_000 };
+  source.pendingLogins.set(pending.id, pending);
+  const done = source.pollAccountLogin(pending);
+  clock.advance(1);
+  await done;
+  const state = source.publicState();
+  assert.equal(state.accounts.length, 1);
+  assert.equal(state.accounts[0].authenticated, true);
+  assert.equal(state.accounts[0].connectionState, "stopped");
+  assert.equal(accounts[0].configurationError, false);
+  assert.equal(accounts[0].tokenRejected, false);
+  assert.equal(accounts[0].accessToken, "newtoken");
+  assert.equal(accounts[0].refreshToken, "newrefresh");
+  source.startChats();
+  assert.equal(source.clients.size, 1);
+});
+
+test("new logins must successfully refresh before they can be linked", async () => {
+  const { source, clock, writes } = setup(async () => {
+    throw Object.assign(new Error("missing client secret"), { code: "missing client secret" });
+  }, [], { pollDeviceToken: async () => freshToken() });
+  source.setAccounts([]);
+  const pending = { id: "login", clientId: "exampleclientid00000000000000", deviceCode: "code", intervalMs: 1, expiresAt: clock.now() + 60_000 };
+  source.pendingLogins.set(pending.id, pending);
+  const done = source.pollAccountLogin(pending);
+  clock.advance(1);
+  await done;
+  assert.equal(source.publicState().accounts.length, 0);
+  assert.equal(writes.length, 0);
+  assert.equal(source.pendingLogins.size, 0);
+  assert.match(source.publicState().message, /Client Type Public/);
 });

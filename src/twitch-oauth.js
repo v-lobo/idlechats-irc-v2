@@ -5,26 +5,6 @@ const REQUESTED_SCOPES = ["chat:read", "chat:edit"];
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 async function postForm(url, fields) {
-  const formData = new FormData();
-  for (const [key, value] of Object.entries(fields)) formData.append(key, value);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { accept: "application/json" },
-    body: formData,
-    signal: AbortSignal.timeout(15_000)
-  });
-  let body;
-  try { body = await response.json(); }
-  catch { body = {}; }
-  if (!response.ok) {
-    const error = new Error(body.message || body.error_description || body.error || `Twitch OAuth respondeu HTTP ${response.status}.`);
-    error.code = body.message || body.error || `http_${response.status}`;
-    throw error;
-  }
-  return body;
-}
-
-async function postUrlEncoded(url, fields) {
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -40,6 +20,7 @@ async function postUrlEncoded(url, fields) {
   if (!response.ok) {
     const error = new Error(body.message || body.error_description || body.error || `Twitch OAuth respondeu HTTP ${response.status}.`);
     error.code = body.message || body.error || `http_${response.status}`;
+    error.status = response.status;
     throw error;
   }
   return body;
@@ -59,6 +40,10 @@ async function requestDeviceCode(clientId) {
   });
   if (!result.device_code || !result.user_code || !result.verification_uri) {
     throw new Error("A Twitch não retornou os dados de autorização do dispositivo.");
+  }
+  const verificationUrl = new URL(result.verification_uri);
+  if (verificationUrl.protocol !== "https:" || verificationUrl.hostname !== "www.twitch.tv") {
+    throw new Error("A Twitch retornou um endereço de ativação inesperado.");
   }
   return {
     clientId: normalizedClientId,
@@ -80,11 +65,16 @@ async function pollDeviceToken(clientId, deviceCode) {
 }
 
 async function refreshToken(clientId, refresh) {
-  return postUrlEncoded("https://id.twitch.tv/oauth2/token", {
+  return postForm("https://id.twitch.tv/oauth2/token", {
     client_id: validateClientId(clientId),
     grant_type: "refresh_token",
     refresh_token: refresh
   });
+}
+
+function isClientConfigurationError(error) {
+  const text = `${error?.code || ""} ${error?.message || ""}`.toLowerCase();
+  return /(?:missing|invalid) client (?:secret|id)|\binvalid client\b|\bunauthorized_client\b/.test(text);
 }
 
 async function validateToken(accessToken) {
@@ -136,6 +126,7 @@ module.exports = {
   REQUESTED_SCOPES,
   ensureChatScopes,
   getUserProfile,
+  isClientConfigurationError,
   pollDeviceToken,
   refreshToken,
   requestDeviceCode,
