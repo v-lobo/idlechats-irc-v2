@@ -54,7 +54,13 @@
       <label><input id="minimize-to-tray" type="checkbox"><span>Minimizar na bandeja</span></label>
     </section>
     <p id="notice" class="notice" role="status"></p>
-    <footer><p id="runtime-metrics" class="runtime-metrics">Memória medindo · CPU medindo · 0 presenças IRC</p><p id="update-status" class="update-status" role="status"></p></footer>
+    <footer><p id="runtime-metrics" class="runtime-metrics">Memória medindo · CPU medindo · 0 presenças IRC</p><p id="update-status" class="update-status" role="status"></p>
+      <details class="diagnostics"><summary>Diagnóstico</summary>
+        <p>Os testes renovam as sessões ou reiniciam o IRC e conferem a volta aos chats. A presença será interrompida brevemente.</p>
+        <div class="diagnostic-actions"><button id="test-renewal" class="secondary" type="button">Testar renovação</button><button id="test-reconnect" class="secondary" type="button">Testar reconexão</button></div>
+        <p id="diagnostic-summary" role="status" aria-live="polite"></p><ul id="diagnostic-results"></ul>
+      </details>
+    </footer>
   </main>
   <script src="irc-renderer.js"></script>
 </body>

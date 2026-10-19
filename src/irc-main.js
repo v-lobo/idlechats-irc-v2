@@ -39,6 +39,7 @@ let liveCheckBusy = false;
 let uiMessage = "";
 let metricsTimer;
 let lastConnectionRecoveryAt = 0;
+let diagnostic = { busy: false, summary: "", results: [] };
 let runtimeMetrics = { privateMb: null, cpuPercent: null, processCount: 0, joinedCount: 0 };
 const clients = new Map();
 const pendingLogins = new Map();
@@ -144,6 +145,7 @@ function publicState() {
   const desired = targetChannels();
   return {
     version: app.getVersion(),
+    diagnostic: { ...diagnostic, results: diagnostic.results.map((result) => ({ ...result })) },
     channels: priorityOrderedChannels().map(({ name }) => {
       const live = liveStates.get(name.toLowerCase()) || { liveStatus: "unchecked", liveDetail: "", checkedAt: null };
       return {
@@ -336,17 +338,21 @@ async function renewAccountToken(accountId) {
     account.needsLogin = false;
     account.tokenRejected = false;
     account.refreshAttempts = 0;
+    let saved = true;
     try { await saveAccounts(); }
     catch {
+      saved = false;
       logConnection("credentials-save-failed", { account: account.login });
       uiMessage = "A sessão foi renovada, mas não pôde ser salva no disco.";
     }
+    logConnection("token-refreshed", { account: account.login, reason: saved ? "saved" : "not-saved" });
     account.refreshing = false;
     if (running) attachClient(account);
     else {
       setAccountState(accountId, { state: "stopped", detail: "Sessão renovada.", joinedChannels: [] });
       scheduleTokenRefresh(accountId);
     }
+    return { renewed: true, saved };
   } catch (error) {
     if (!accounts.includes(account)) return;
     if (isClientConfigurationError(error)) {
@@ -373,6 +379,92 @@ async function renewAccountToken(accountId) {
   } finally {
     account.refreshing = false;
   }
+}
+
+function waitForChatRecovery(account, expectedChannels) {
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+      resolve(result);
+    };
+    const check = () => {
+      if (!running || isQuitting || !accounts.includes(account)) return finish({ status: "inconclusive", detail: "Teste interrompido." });
+      if (account.needsLogin || account.configurationError) return finish({ status: "failed", detail: safeAccountState(account.id).detail });
+      const currentTargets = targetChannels();
+      if (currentTargets.length !== expectedChannels.length || currentTargets.some((channel) => !expectedChannels.includes(channel))) {
+        return finish({ status: "inconclusive", detail: "Os canais selecionados mudaram durante o teste. Tente novamente." });
+      }
+      const client = clients.get(account.id);
+      if (client?.ready && expectedChannels.every((channel) => client.joinedChannels.has(channel))) {
+        finish({ status: "passed", detail: `${expectedChannels.length} JOIN(s) confirmado(s).` });
+      }
+    };
+    const interval = setInterval(check, 500);
+    const timeout = setTimeout(() => finish({ status: "failed", detail: "Os chats não foram confirmados em 60s. Consulte connections.log." }), 60_000);
+    interval.unref?.();
+    timeout.unref?.();
+    check();
+  });
+}
+
+async function runConnectionTest(kind) {
+  if (!["renewal", "reconnect"].includes(kind)) throw new Error("Teste de conexão inválido.");
+  if (diagnostic.busy) throw new Error("Já existe um teste em andamento.");
+  if (!running) throw new Error("Inicie o IRC antes de testar.");
+  if (!accounts.length) throw new Error("Conecte uma conta Twitch antes de testar.");
+  if (accounts.some((account) => account.refreshing)) throw new Error("Aguarde a renovação em andamento e tente novamente.");
+  if (liveCheckBusy) throw new Error("Aguarde a consulta dos canais terminar e tente novamente.");
+  const expectedChannels = targetChannels();
+  if (!expectedChannels.length) throw new Error("É necessário ter ao menos um canal selecionado para confirmar a volta aos chats.");
+  const selectedAccounts = [...accounts];
+  diagnostic = {
+    busy: true, summary: kind === "renewal" ? "Renovando sessões e confirmando os chats…" : "Reconectando IRC e confirmando os chats…",
+    results: selectedAccounts.map((account) => ({ id: account.id, login: account.login, status: "running", detail: "Aguardando…" }))
+  };
+  const setResult = (account, result) => {
+    Object.assign(diagnostic.results.find((row) => row.id === account.id), result);
+    broadcastState();
+  };
+  logConnection("diagnostic-start", { reason: kind });
+  broadcastState();
+  try {
+    await Promise.all(selectedAccounts.map(async (account) => {
+      try {
+        if (account.needsLogin || account.configurationError || !account.accessToken) {
+          return setResult(account, { status: "failed", detail: safeAccountState(account.id).detail || "Autorize esta conta novamente." });
+        }
+        if (kind === "renewal") {
+          setResult(account, { status: "running", detail: "Renovando e salvando a sessão…" });
+          const renewal = await renewAccountToken(account.id);
+          if (!renewal?.renewed || !renewal.saved) {
+            return setResult(account, { status: "failed", detail: renewal?.renewed ? "A sessão foi renovada, mas não foi salva no disco." : safeAccountState(account.id).detail || "Não foi possível renovar a sessão." });
+          }
+          const validation = await validateToken(account.accessToken);
+          ensureChatScopes(validation.scopes);
+          if (!Number.isFinite(validation.expires_in) || validation.expires_in <= 0) throw new Error("A sessão renovada não tem validade confirmada.");
+          if (validation.client_id !== (account.clientId || clientId)) throw new Error("A sessão pertence a outro cadastro Twitch.");
+        } else {
+          const client = clients.get(account.id);
+          if (!client) return setResult(account, { status: "failed", detail: "Esta conta não tem conexão IRC para reiniciar." });
+          client.reconnect("Teste manual de reconexão IRC.");
+        }
+        setResult(account, { status: "running", detail: "Confirmando a volta aos chats…" });
+        const recovery = await waitForChatRecovery(account, expectedChannels);
+        if (kind === "renewal" && recovery.status === "passed") recovery.detail = `Sessão renovada, salva e validada. ${recovery.detail}`;
+        setResult(account, recovery);
+      } catch (error) {
+        setResult(account, { status: "failed", detail: error.message || "Não foi possível concluir o teste." });
+      }
+    }));
+    const passed = diagnostic.results.filter((result) => result.status === "passed").length;
+    diagnostic.summary = `${passed} de ${selectedAccounts.length} conta(s) passaram no teste de ${kind === "renewal" ? "renovação" : "reconexão"}.`;
+    logConnection("diagnostic-complete", { reason: `${kind}-${passed}-of-${selectedAccounts.length}` });
+  } finally {
+    diagnostic.busy = false;
+    broadcastState();
+  }
+  return publicState();
 }
 
 function syncClients() {
@@ -678,6 +770,7 @@ async function restoreAccounts() {
 }
 
 ipcMain.handle("get-state", () => publicState());
+ipcMain.handle("test-connections", (_event, kind) => runConnectionTest(kind));
 ipcMain.handle("network-restored", () => recoverConnections("network-online"));
 ipcMain.handle("check-for-updates", () => getLatestRelease());
 ipcMain.handle("open-latest-release", async () => {

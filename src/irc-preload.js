@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("idleChats", {
   getState: () => ipcRenderer.invoke("get-state"),
+  testConnections: (kind) => ipcRenderer.invoke("test-connections", kind),
   networkRestored: () => ipcRenderer.invoke("network-restored"),
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   openLatestRelease: () => ipcRenderer.invoke("open-latest-release"),

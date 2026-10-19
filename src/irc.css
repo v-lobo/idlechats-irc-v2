@@ -85,4 +85,12 @@ details[open] > summary::before { transform: rotate(90deg); }
 .runtime-metrics { padding: 2px 0 6px; color: #847c90; font-size: 9px; }
 .update-status { min-height: 0; color: #847c90; font-size: 9px; }
 .update-status:not(:empty) { padding: 5px 0 2px; }
+.diagnostics { margin-top: 4px; color: #847c90; font-size: 9px; }
+.diagnostics summary { justify-content: flex-start; min-height: 26px; color: #756a83; font-size: 9px; }
+.diagnostics p { line-height: 1.45; }
+.diagnostic-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0; }
+#diagnostic-results { padding-left: 14px; margin: 5px 0; }
+#diagnostic-results li { margin: 4px 0; overflow-wrap: anywhere; }
+#diagnostic-results li[data-status="passed"] { color: #079767; }
+#diagnostic-results li[data-status="failed"] { color: #bd4c32; }
 @media (max-width: 560px) { body { min-width: 360px; } .app-shell { padding: 10px; } .state-pill { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }

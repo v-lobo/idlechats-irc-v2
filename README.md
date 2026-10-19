@@ -73,6 +73,19 @@ Esse erro exige correção do cadastro Twitch integrado pelo responsável do Idl
 
 Ao atualizar para um Client ID diferente, as contas anteriores pedem uma nova autorização. Use **+** em Contas Twitch e autorize cada conta novamente. O app atualiza o perfil existente, sem duplicar a conta, e conserva os canais cadastrados.
 
+## Testar renovação e reconexão
+
+Com o IRC iniciado e ao menos um canal selecionado, abra **Diagnóstico** no rodapé:
+
+1. **Testar renovação** força o mesmo fluxo usado na renovação automática, sem esperar o token expirar: renova a sessão, salva os tokens, valida a autorização e confirma os JOINs nos chats.
+2. **Testar reconexão** reinicia as conexões IRC e confirma que as contas voltam aos chats selecionados.
+
+O resultado aparece por conta. O app só informa **Passou** depois dos JOINs confirmados; se os canais selecionados mudarem durante o teste, ele informa **Inconclusivo**. A recuperação dos chats tem prazo de 60 segundos. Os testes interrompem a presença brevemente e não enviam mensagens de chat. Não é necessário sair da conta nem alterar o relógio do Windows.
+
+Para conferir a recuperação em condições reais, você também pode desconectar a internet por um minuto, reconectar e aguardar até dois minutos. Em outro teste, suspenda o computador e depois retome. As contas devem voltar ao IRC e recuperar as presenças automaticamente. Esses testes manuais complementam o diagnóstico; não garantem disponibilidade contínua da rede ou da Twitch.
+
+As renovações são registradas como `token-refreshed` em `connections.log`, sem incluir os tokens. Deixar o app aberto até a próxima renovação automática permite acompanhar também o funcionamento ao longo do tempo.
+
 ## Verificações de desenvolvimento
 
 Execute `npm test` para simular quedas de rede, conexões sem resposta, reconexão da Twitch, retomada do computador, renovação simultânea de contas e gravação concorrente dos dados, sem usar contas Twitch reais.

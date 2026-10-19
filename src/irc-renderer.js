@@ -27,6 +27,10 @@ const runtimeMetrics = document.querySelector("#runtime-metrics");
 const appVersion = document.querySelector("#app-version");
 const checkUpdatesButton = document.querySelector("#app-version");
 const updateStatus = document.querySelector("#update-status");
+const testRenewalButton = document.querySelector("#test-renewal");
+const testReconnectButton = document.querySelector("#test-reconnect");
+const diagnosticSummary = document.querySelector("#diagnostic-summary");
+const diagnosticResults = document.querySelector("#diagnostic-results");
 let state = { channels: [], accounts: [], pendingLogins: [], running: false, preferences: {} };
 let updateAvailable = false;
 
@@ -193,7 +197,29 @@ function render() {
     ? `${online} ao vivo · consultado às ${new Date(state.liveCheckedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
     : "Consulta de status a cada 1 minuto.";
   checkLiveButton.disabled = !state.channels.length || state.channels.some((channel) => channel.liveStatus === "checking");
+  const diagnostic = state.diagnostic || { busy: false, summary: "", results: [] };
+  testRenewalButton.disabled = testReconnectButton.disabled = !state.running || diagnostic.busy;
+  diagnosticSummary.textContent = diagnostic.summary;
+  diagnosticResults.replaceChildren();
+  for (const result of diagnostic.results) {
+    const row = document.createElement("li");
+    row.dataset.status = result.status;
+    const label = { running: "Em andamento", passed: "Passou", failed: "Falhou", inconclusive: "Inconclusivo" }[result.status] || result.status;
+    row.textContent = `@${result.login}: ${label} · ${result.detail}`;
+    diagnosticResults.append(row);
+  }
 }
+
+async function runDiagnostic(kind) {
+  testRenewalButton.disabled = testReconnectButton.disabled = true;
+  try { state = await window.idleChats.testConnections(kind); render(); }
+  catch (error) { diagnosticSummary.textContent = error.message || String(error); }
+  finally {
+    testRenewalButton.disabled = testReconnectButton.disabled = !state.running || state.diagnostic?.busy === true;
+  }
+}
+testRenewalButton.addEventListener("click", () => { void runDiagnostic("renewal"); });
+testReconnectButton.addEventListener("click", () => { void runDiagnostic("reconnect"); });
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
