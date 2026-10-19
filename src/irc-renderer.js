@@ -32,6 +32,7 @@ let updateAvailable = false;
 
 window.history.scrollRestoration = "manual";
 window.addEventListener("load", () => window.scrollTo(0, 0), { once: true });
+window.addEventListener("online", () => { void window.idleChats.networkRestored().catch(reportError); });
 accountsSection.addEventListener("toggle", () => accountsPanel.classList.toggle("collapsed", !accountsSection.open));
 
 function makeButton(text, className, handler, title = text) {
@@ -85,8 +86,8 @@ function renderPending() {
 
 function renderAccounts() {
   accountList.replaceChildren();
-  const connected = state.accounts.filter((account) => account.authenticated).length;
-  accountSummary.textContent = `${connected} conectada(s) · ${state.accounts.length} cadastrada(s)`;
+  const connected = state.accounts.filter((account) => account.authenticated && account.connectionState === "connected").length;
+  accountSummary.textContent = `${connected} no IRC · ${state.accounts.length} cadastrada(s)`;
   accountCount.textContent = String(state.accounts.length);
   accountsPanel.classList.toggle("collapsed", !accountsSection.open);
   for (const account of state.accounts) {
@@ -111,6 +112,10 @@ function renderAccounts() {
     name.textContent = account.displayName || account.login || "Conta Twitch";
     const detail = document.createElement("span");
     detail.textContent = `@${account.login || "conta"} · ${account.authenticated ? `${account.joinedChannels.length} presença(s) IRC` : "precisa reconectar"}`;
+    if (account.authenticated && ["connecting", "reconnecting"].includes(account.connectionState)) {
+      detail.textContent = `@${account.login} · ${account.detail || "Reconectando…"}`;
+    }
+    detail.title = account.detail || detail.textContent;
     copy.append(name, detail);
     identity.append(copy);
     const pill = document.createElement("span");
@@ -160,8 +165,9 @@ function render() {
   if (state.pendingLogins?.length) accountsSection.open = true;
   toggleButton.disabled = !state.channels.length || !state.accounts.some((account) => account.authenticated);
   toggleButton.textContent = state.running ? "Parar conexões" : "Iniciar IRC";
-  connectionIndicator.dataset.running = String(state.running);
-  connectionIndicator.querySelector("span").textContent = state.running ? "IRC ativo" : "Parado";
+  const hasConnection = state.accounts.some((account) => account.authenticated && account.connectionState === "connected");
+  connectionIndicator.dataset.running = String(state.running && hasConnection);
+  connectionIndicator.querySelector("span").textContent = state.running ? hasConnection ? "IRC ativo" : "Reconectando…" : "Parado";
   const joined = state.accounts.reduce((total, account) => total + account.joinedChannels.length, 0);
   headline.textContent = state.running ? "IRC em segundo plano" : "Conexões de chat";
   subhead.textContent = `${joined} JOIN(s) IRC confirmado(s) · ${state.accounts.length} conta(s) · ${state.channels.length} canal(is).`;

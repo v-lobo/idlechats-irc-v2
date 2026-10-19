@@ -1,16 +1,19 @@
 "use strict";
 
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, safeStorage, shell, Tray } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, safeStorage, shell, Tray } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { TwitchIrcClient } = require("./twitch-irc");
+const { writeJson, appendConnectionLog } = require("./local-files");
 const {
   ensureChatScopes, getUserProfile, pollDeviceToken, refreshToken, requestDeviceCode, validateClientId, validateToken
 } = require("./twitch-oauth");
 
 app.setName("IdleChats IRC V2");
 app.setPath("userData", path.join(app.getPath("appData"), "IdleChats IRC V2"));
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
 
 const CHANNEL_PATTERN = /^[a-zA-Z0-9_]{1,25}$/;
 const MAX_CHANNELS_PER_ACCOUNT = 5;
@@ -21,6 +24,7 @@ const GITHUB_RELEASES_API = "https://api.github.com/repos/v-lobo/idlechats-irc-v
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 const channelsFile = () => path.join(app.getPath("userData"), "channels.json");
 const accountsFile = () => path.join(app.getPath("userData"), "accounts.json");
+const connectionLogFile = () => path.join(app.getPath("userData"), "connections.log");
 
 let mainWindow;
 let tray;
@@ -34,6 +38,7 @@ let liveCheckTimer;
 let liveCheckBusy = false;
 let uiMessage = "";
 let metricsTimer;
+let lastConnectionRecoveryAt = 0;
 let runtimeMetrics = { privateMb: null, cpuPercent: null, processCount: 0, joinedCount: 0 };
 const clients = new Map();
 const pendingLogins = new Map();
@@ -48,11 +53,10 @@ async function readJson(file, fallback) {
   }
 }
 
-async function writeJson(file, value) {
-  await fs.mkdir(app.getPath("userData"), { recursive: true });
-  const temporary = `${file}.tmp`;
-  await fs.writeFile(temporary, JSON.stringify(value, null, 2), "utf8");
-  await fs.rename(temporary, file);
+function logConnection(event, fields = {}) {
+  void appendConnectionLog(connectionLogFile(), { event, ...fields }).catch(() => {
+    console.warn("Não foi possível gravar o registro de conexões.");
+  });
 }
 
 function encryptTokens(tokens) {
@@ -165,7 +169,7 @@ function publicState() {
     pendingLogins: [...pendingLogins.values()].map(({ id, userCode, verificationUri, expiresAt }) => ({ id, userCode, verificationUri, expiresAt })),
     message: uiMessage,
     running,
-    runtimeMetrics: { ...runtimeMetrics },
+    runtimeMetrics: { ...runtimeMetrics, joinedCount: [...accountStates.values()].reduce((total, state) => total + state.joinedChannels.length, 0) },
     preferences: { ...preferences },
     liveCheckedAt: [...liveStates.values()].reduce((latest, item) => item.checkedAt && (!latest || item.checkedAt > latest) ? item.checkedAt : latest, null)
   };
@@ -224,7 +228,11 @@ function broadcastState() {
 }
 
 function setAccountState(id, next) {
+  const previous = safeAccountState(id);
   accountStates.set(id, { ...safeAccountState(id), ...next });
+  if (next.state && (previous.state !== next.state || previous.detail !== next.detail)) {
+    logConnection("account-state", { account: accounts.find((item) => item.id === id)?.login, state: next.state, reason: next.reason || next.state });
+  }
   broadcastState();
 }
 
@@ -235,24 +243,38 @@ function desiredChannelsFor(accountId) {
 }
 
 function attachClient(account) {
-  if (!running || !account?.accessToken || account.needsLogin) return;
+  if (isQuitting || !running || !account?.accessToken || !accounts.includes(account) || account.needsLogin || account.refreshing) return;
+  if (account.tokenRejected || account.expiresAt <= Date.now()) {
+    if (!account.refreshTimer) void renewAccountToken(account.id);
+    return;
+  }
   const existing = clients.get(account.id);
+  clients.delete(account.id);
   if (existing) existing.disconnect();
   const client = new TwitchIrcClient({ login: account.login, accessToken: account.accessToken });
   clients.set(account.id, client);
-  client.on("status", ({ state, detail }) => setAccountState(account.id, { state, detail }));
+  client.on("status", ({ state, detail, reason }) => {
+    if (clients.get(account.id) !== client) return;
+    setAccountState(account.id, { state, detail, reason, joinedChannels: [...client.joinedChannels] });
+  });
   client.on("joined", (channel) => {
+    if (clients.get(account.id) !== client) return;
     const current = safeAccountState(account.id);
     setAccountState(account.id, { state: "connected", joinedChannels: [...new Set([...current.joinedChannels, channel])] });
   });
   client.on("parted", (channel) => {
+    if (clients.get(account.id) !== client) return;
     const current = safeAccountState(account.id);
     setAccountState(account.id, { joinedChannels: current.joinedChannels.filter((item) => item !== channel) });
   });
   client.on("authentication-error", (detail) => {
-    client.disconnect();
+    if (clients.get(account.id) !== client) return;
     clients.delete(account.id);
-    setAccountState(account.id, { state: "reconnecting", detail: `${detail} Renovando a sessão…`, joinedChannels: [] });
+    client.disconnect();
+    account.tokenRejected = true;
+    clearTimeout(account.refreshTimer);
+    account.refreshTimer = null;
+    setAccountState(account.id, { state: "reconnecting", reason: "irc-token-rejected", detail: `${detail} Renovando a sessão…`, joinedChannels: [] });
     void renewAccountToken(account.id);
   });
   client.setDesiredChannels(desiredChannelsFor(account.id));
@@ -262,12 +284,15 @@ function attachClient(account) {
 
 function scheduleTokenRefresh(accountId, delayOverride) {
   const account = accounts.find((item) => item.id === accountId);
-  if (!account || !account.expiresAt) return;
+  if (isQuitting || !account || !account.expiresAt) return;
   clearTimeout(account.refreshTimer);
   const delay = Number.isFinite(delayOverride)
     ? Math.max(5_000, delayOverride)
     : Math.max(20_000, account.expiresAt - Date.now() - 5 * 60_000);
-  account.refreshTimer = setTimeout(() => renewAccountToken(accountId), delay);
+  account.refreshTimer = setTimeout(() => {
+    account.refreshTimer = null;
+    void renewAccountToken(accountId);
+  }, delay);
   account.refreshTimer.unref?.();
 }
 
@@ -285,32 +310,44 @@ async function renewAccountToken(accountId) {
   account.refreshing = true;
   try {
     const tokens = await refreshToken(account.clientId || clientId, account.refreshToken);
+    if (!accounts.includes(account)) return;
+    if (!tokens.access_token) throw new Error("Resposta de renovação sem token de acesso.");
     account.accessToken = tokens.access_token;
-    account.refreshToken = tokens.refresh_token;
+    account.refreshToken = tokens.refresh_token || account.refreshToken;
     account.expiresAt = Date.now() + (Number(tokens.expires_in) || 14_400) * 1000;
     account.needsLogin = false;
+    account.tokenRejected = false;
     account.refreshAttempts = 0;
-    await saveAccounts();
+    try { await saveAccounts(); }
+    catch {
+      logConnection("credentials-save-failed", { account: account.login });
+      uiMessage = "A sessão foi renovada, mas não pôde ser salva no disco.";
+    }
+    account.refreshing = false;
     if (running) attachClient(account);
     else {
       setAccountState(accountId, { state: "stopped", detail: "Sessão renovada.", joinedChannels: [] });
       scheduleTokenRefresh(accountId);
     }
   } catch (error) {
+    if (!accounts.includes(account)) return;
     if (requiresUserAuthorization(error)) {
       account.needsLogin = true;
       clearTimeout(account.refreshTimer);
       const client = clients.get(accountId);
       client?.disconnect();
       clients.delete(accountId);
-      setAccountState(accountId, { state: "authentication-error", detail: `A Twitch invalidou a sessão. Reconecte esta conta. (${error.message})`, joinedChannels: [] });
+      setAccountState(accountId, { state: "authentication-error", reason: "oauth-session-invalid", detail: `A Twitch invalidou a sessão. Reconecte esta conta. (${error.message})`, joinedChannels: [] });
     } else {
       account.refreshAttempts = (account.refreshAttempts || 0) + 1;
       const delay = Math.min(5 * 60_000, 15_000 * (2 ** Math.min(account.refreshAttempts - 1, 4)));
       scheduleTokenRefresh(accountId, delay);
-      setAccountState(accountId, {
-        state: "reconnecting",
-        detail: `Falha temporária ao renovar a sessão. Nova tentativa em ${Math.round(delay / 1000)}s. (${error.message})`
+      logConnection("token-refresh-retry", { account: account.login });
+      const currentClient = clients.get(accountId);
+      if (!currentClient?.ready) setAccountState(accountId, {
+        state: "reconnecting", reason: "oauth-refresh-retry",
+        detail: `Falha temporária ao renovar a sessão. Nova tentativa em ${Math.round(delay / 1000)}s. (${error.message})`,
+        joinedChannels: currentClient ? [...currentClient.joinedChannels] : []
       });
     }
   } finally {
@@ -321,11 +358,30 @@ async function renewAccountToken(accountId) {
 function syncClients() {
   if (!running) return;
   for (const account of accounts) {
-    if (account.needsLogin || !account.accessToken) continue;
+    if (account.needsLogin || !account.accessToken || account.refreshing) continue;
     const client = clients.get(account.id);
     if (client) client.setDesiredChannels(desiredChannelsFor(account.id));
     else attachClient(account);
   }
+}
+
+function recoverConnections(reason) {
+  if (isQuitting || !running || Date.now() - lastConnectionRecoveryAt < 10_000) return;
+  lastConnectionRecoveryAt = Date.now();
+  logConnection("connection-recovery", { reason });
+  for (const account of accounts) {
+    if (account.needsLogin || !account.accessToken || account.refreshing) continue;
+    if (account.tokenRejected || account.expiresAt <= Date.now() + 60_000) {
+      clearTimeout(account.refreshTimer);
+      account.refreshTimer = null;
+      void renewAccountToken(account.id);
+    } else {
+      const client = clients.get(account.id);
+      if (client) client.reconnect("Retomando a conexão após suspensão ou retorno da rede.");
+      else attachClient(account);
+    }
+  }
+  void checkChannelsOnline();
 }
 
 async function requestChannelStatus(name) {
@@ -395,8 +451,6 @@ function stopChats() {
   running = false;
   for (const [id, client] of clients) {
     client.disconnect();
-    const account = accounts.find((item) => item.id === id);
-    clearTimeout(account?.refreshTimer);
     accountStates.set(id, { state: "stopped", detail: "Conexão parada.", joinedChannels: [] });
   }
   clients.clear();
@@ -588,6 +642,7 @@ async function restoreAccounts() {
 }
 
 ipcMain.handle("get-state", () => publicState());
+ipcMain.handle("network-restored", () => recoverConnections("network-online"));
 ipcMain.handle("check-for-updates", () => getLatestRelease());
 ipcMain.handle("open-latest-release", async () => {
   const release = await getLatestRelease();
@@ -645,11 +700,14 @@ ipcMain.handle("set-live-only", async (_event, value) => {
   return publicState();
 });
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   await loadData();
   if (!safeStorage.isEncryptionAvailable()) throw new Error("A criptografia local do Windows está indisponível; as contas não serão carregadas.");
   createMainWindow();
   createTray();
+  logConnection("app-start", { reason: app.getVersion() });
+  powerMonitor.on("suspend", () => logConnection("system-suspend"));
+  powerMonitor.on("resume", () => recoverConnections("system-resume"));
   sampleRuntimeMetrics();
   metricsTimer = setInterval(sampleRuntimeMetrics, 30_000);
   metricsTimer.unref?.();
@@ -665,12 +723,16 @@ app.on("before-quit", () => {
   isQuitting = true;
   clearInterval(liveCheckTimer);
   clearInterval(metricsTimer);
+  for (const account of accounts) clearTimeout(account.refreshTimer);
+  logConnection("app-stop");
   for (const pending of pendingLogins.values()) {
     pending.cancelled = true;
     if (pending.timer) clearTimeout(pending.timer);
   }
   stopChats();
 });
+
+app.on("second-instance", showMainWindow);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

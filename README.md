@@ -35,15 +35,17 @@ Canais ao vivo ficam no topo da lista e têm prioridade para as cinco vagas de c
 
 - As sessões e os canais ficam na pasta de dados local `IdleChats IRC V2`; não são compartilhados entre usuários nem enviados a este repositório.
 - O app renova os tokens antes de expirarem e repete falhas temporárias de rede. Como o app Twitch usa Device Code Grant público, a Twitch pode invalidar refresh tokens após 30 dias sem uso; nesse caso, a conta precisa ser autorizada novamente.
+- Conexões sem resposta são recriadas automaticamente. O login IRC tem prazo de 30 segundos; uma checagem de conexão ocorre a cada minuto e aguarda até 30 segundos pela resposta. São comandos de manutenção do protocolo, sem envio de mensagens ao chat.
+- Após suspensão do computador ou retorno da rede, o app retoma as conexões e renova sessões expiradas. As tentativas de reconexão têm intervalos progressivos para evitar uma sequência de conexões durante uma queda de internet.
 - Cada conta Twitch precisa autorizar individualmente o app.
 - O indicador de JOIN IRC confirma a entrada no chat; um jogo ou serviço externo pode demorar alguns minutos para reconhecer a presença.
 - Minimizar na bandeja mantém as conexões em execução. Fechar completamente o app desconecta as contas.
 - O rodapé mostra memória privada aproximada dos processos do app, uso agregado de CPU e presenças IRC confirmadas.
-- O rodapé também mostra a versão instalada. **Verificar atualização** consulta as versões publicadas no GitHub; se houver uma mais nova, **Baixar atualização** abre a página da versão.
+- Clique no número da versão no cabeçalho para consultar as Releases do GitHub. Se houver atualização, o texto mostra a versão atual e a nova com 💫; clique novamente para abrir a página da versão. Se estiver atualizado, aparece 🆗.
 
 ## Atualizar o app
 
-As atualizações são instaladas manualmente. Na página aberta pelo app, baixe **Source code (zip)** da versão mais recente e extraia os arquivos para a pasta do app, substituindo os arquivos da versão anterior. Em seguida, execute `Abrir IdleChats.vbs` novamente; se necessário, o lançador instala as dependências. Os dados locais (contas e canais) ficam em `%APPDATA%\IdleChats IRC V2` e não são substituídos pela atualização.
+As atualizações são instaladas manualmente. Encerre o app pela opção **Sair** da bandeja. Na página aberta pelo app, baixe **Source code (zip)** da versão mais recente e extraia os arquivos para a pasta do app, substituindo os arquivos da versão anterior. Em seguida, execute `Abrir IdleChats.vbs` novamente; se necessário, o lançador instala as dependências. Os dados locais (contas e canais) ficam em `%APPDATA%\IdleChats IRC V2` e não são substituídos pela atualização.
 
 O verificador usa as **Releases** deste repositório. Para publicar uma atualização, incremente a versão em `package.json` e crie uma Release no GitHub com a tag correspondente no formato `vMAJOR.MINOR.PATCH` (por exemplo, `v2.0.1`).
 
@@ -56,3 +58,13 @@ Remova a conta no app e, se desejar, revogue a autorização do IdleChats nas co
 O lançador precisa do **Node.js 22.12 ou posterior** e do npm. Instale a versão LTS pelo [site oficial do Node.js](https://nodejs.org/en/download/) e mantenha ativada a opção para adicionar o Node ao PATH. Depois, feche e abra novamente o lançador. Se o Node já estiver instalado e ainda não for encontrado, reinicie o Windows Explorer ou o computador para atualizar o PATH.
 
 Se a instalação do Electron falhar, consulte o arquivo `install-electron.log` na pasta do app. Ele contém os detalhes do erro de instalação ou download.
+
+### Se as contas ficarem em Reconectando
+
+Confira a conexão de internet e passe o mouse sobre o status da conta para ver o motivo e o prazo da tentativa. Para reiniciar as conexões manualmente, clique em **Parar conexões** e depois em **Iniciar IRC**. Se necessário, encerre o app pela bandeja e abra novamente.
+
+O arquivo `%APPDATA%\IdleChats IRC V2\connections.log` registra mudanças de conexão, suspensão, retorno da rede e motivos técnicos das tentativas. Ele não grava tokens nem mensagens de chat. O registro tem limite de 256 KB e mantém uma cópia anterior em `connections.log.1`. Se o problema voltar a acontecer, esses arquivos permitem investigar a sequência de eventos. Uma sessão realmente revogada pela Twitch continuará exigindo autorização novamente.
+
+## Verificações de desenvolvimento
+
+Execute `npm test` para simular quedas de rede, conexões sem resposta, reconexão da Twitch, retomada do computador, renovação simultânea de contas e gravação concorrente dos dados, sem usar contas Twitch reais.
