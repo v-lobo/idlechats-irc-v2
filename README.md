@@ -1,5 +1,7 @@
 # IdleChats IRC V2
 
+Repositório desta versão: [v-lobo/idlechats-irc-v2](https://github.com/v-lobo/idlechats-irc-v2). A versão 2.1.0 adiciona o Discord integrado, com sessão persistente e indicação da sala de voz conectada.
+
 Aplicativo Electron para manter presença em chats Twitch usando uma conexão IRC por conta. Não abre páginas de chat nem várias janelas de navegador. O app não mostra, salva nem envia mensagens de chat.
 
 ## Requisitos
@@ -89,3 +91,42 @@ As renovações são registradas como `token-refreshed` em `connections.log`, se
 ## Verificações de desenvolvimento
 
 Execute `npm test` para simular quedas de rede, conexões sem resposta, reconexão da Twitch, retomada do computador, renovação simultânea de contas e gravação concorrente dos dados, sem usar contas Twitch reais.
+
+## Discord incorporado (experimental)
+
+O painel Discord abre uma janela do próprio IdleChats com o Discord web incorporado. A Twitch continua usando IRC; o Discord mantém uma página Chromium em execução e consome recursos adicionais.
+
+1. Clique em **Abrir Discord** e faça login com a conta secundária. O cadastro da conta e eventuais verificações são feitos pelo Discord.
+2. A sala padrão é `https://discord.com/channels/1516313244057337908/1551936385030824056` e abre automaticamente ao iniciar a janela Discord. Para mudar o endereço, use o controle discreto **Trocar link da sala** e salve o novo link. Um link personalizado já salvo é preservado.
+3. Use **Ir para sala** e confirme a entrada pelos controles do Discord. Abrir o link não garante entrada automática.
+4. Ative **Modo compacto** para reduzir a barra do IdleChats, ocultar as instruções e as listas laterais de servidores e membros. A barra diminui de 156 para 100 pixels, deixando mais espaço para a sala. Desative para voltar ao layout completo, trocar de servidor ou resolver problemas de navegação. A simplificação usa CSS e pode precisar de ajuste após mudanças do Discord.
+5. Use **Ocultar e manter aberto**. Fechar a janela Discord também a oculta. Ative **Minimizar na bandeja** no painel principal para manter todo o IdleChats executando ao fechar sua janela principal.
+6. **Encerrar** destrói a página e encerra sua conexão, preservando o login. Para sair da conta, use as configurações do próprio Discord. Sair do IdleChats encerra também o Discord.
+
+A sessão persiste na partição `persist:idle-chats-discord-secondary`, dentro dos dados do IdleChats IRC V2, separada da Twitch e do Discord instalado. O código não extrai tokens pessoais nem automatiza chamadas à API do Discord. O conteúdo remoto não tem acesso a Node.js nem à ponte de comandos do aplicativo.
+
+Ao usar **Encerrar** ou sair do IdleChats, o app aguarda o evento normal de saída da página do Discord e grava os dados locais e cookies pendentes antes de destruir a janela. Assim, o Discord pode salvar a própria autenticação e reutilizá-la na próxima abertura, sem armazenar sua senha no IdleChats. Sair da conta nas configurações do próprio Discord continua encerrando a autenticação. Uma sessão revogada ou expirada pelo Discord exige novo login.
+
+O login integrado usa e-mail e senha ou o QR do Discord. Solicitações de passkeys/WebAuthn são recusadas antes de chamar o autenticador do Windows, evitando o diálogo “Escolher uma chave de acesso”. Isso se aplica somente à página incorporada no IdleChats; a autenticação da conta continua sendo validada pelo Discord, incluindo a segunda etapa quando exigida.
+
+Microfone, câmera, compartilhamento de tela e outras permissões são negados; a reprodução de áudio fica silenciada pelo Electron, com o bloqueio reaplicado em navegações, início de reprodução e mudanças do estado de áudio. Isso não altera os dispositivos do Windows nem depende dos botões de mute do Discord. Caso o Discord exija permissão de microfone para entrar, esta versão não a concede e será necessário avaliar a compatibilidade. O indicador de voz lê apenas os controles da própria conta no painel do Discord. Ele não usa a URL aberta como prova de conexão nem consulta mensagens de chat, tokens ou módulos internos do Discord. Não há reconexão automática, contador de presença ou confirmação de bônus; confira a elegibilidade da conta secundária no jogo. Suspensão do computador e quedas de rede podem interromper a presença.
+
+
+### Indicador de presença do Discord
+
+- **Discord ativo** (verde): o painel da conta mostra “Voz conectada” ou “Voice Connected” e o link da conexão corresponde ao servidor e à sala configurados.
+- **Outra sala** (amarelo): existe conexão de voz confirmada, mas em outro canal ou servidor.
+- **Fora da sala**, **Conectando voz**, **Faça login** ou **Sem conexão**: a interface mostra a condição correspondente.
+- **Não verificado**: o painel não pôde ser interpretado, a sala não foi identificada ou a última leitura tem mais de 15 segundos. Uma mudança no layout ou idioma do Discord pode exigir ajustes. O indicador prefere não confirmar a exibir um falso positivo.
+
+A leitura acompanha mudanças no painel e é renovada a cada 5 segundos, inclusive com a janela oculta. O IPC aceita observações somente do documento principal da página `https://discord.com` incorporada na sessão atual. “Discord ativo” confirma o estado mostrado pelo Discord, não o recebimento do bônus no jogo.
+
+### Verificação da integração
+
+`npx electron tests/discord-smoke.cjs` executa um teste com dados temporários, sem acessar contas salvas. Requer acesso à página de login do Discord. Verifica validação do link, isolamento do conteúdo remoto, áudio silenciado, alternância do modo compacto e ciclo de ocultar/reabrir/encerrar. Não testa autenticação nem presença em voz. Capturas ficam em `dist/discord-preview/`.
+
+O indicador acompanha somente o documento principal. Quadros internos e mudanças de rota do Discord não recolocam uma página já aberta em “Carregando”. Se o documento principal não responder em 30 segundos, aparece uma mensagem de demora com a opção de recarregar. “Página aberta” não confirma conexão de voz.
+
+`node --test tests/discord-page-status.test.cjs` verifica as transições do indicador. `npx electron tests/discord-status-smoke.cjs` reproduz o carregamento de um quadro interno lento usando um servidor local e verifica os textos nas duas janelas. Também simula os controles de voz sob uma origem Discord interceptada somente na sessão temporária de teste e verifica sala correta, outra sala, login, desconexão e atualização com a janela oculta. Esses testes não usam contas nem conexões de voz reais.
+
+`npm run test:discord-session` verifica a persistência com dados fictícios em dois processos separados: encerramento da página, reabertura, saída normal do app com a janela oculta e nova execução. Usa um perfil temporário e não acessa a sessão real do usuário.

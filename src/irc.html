@@ -11,7 +11,7 @@
   <main class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">T</span><div><h1>IdleChats <button id="app-version" class="version-control" type="button" title="Clique para verificar atualizações">v—</button></h1><p>Presença nos chats em segundo plano</p></div></div>
-      <div class="topbar-actions"><span id="connection-indicator" class="indicator" data-running="false"><i></i><span>Parado</span></span></div>
+      <div class="topbar-actions"><span id="discord-voice" class="indicator discord-voice" data-state="closed" role="status"><i></i><span>Fechado</span></span><span id="connection-indicator" class="indicator" data-running="false"><i></i><span>Parado</span></span></div>
     </header>
 
     <section class="hero">
@@ -47,6 +47,15 @@
           <div class="input-row"><span>#</span><input id="channel-input" placeholder="nome_do_canal" autocomplete="off" required><button class="primary small" type="submit" aria-label="Adicionar canal">+</button></div>
         </form>
       </details>
+    </section>
+
+    <section class="card discord-card" aria-label="Discord">
+      <div class="channel-manager-top"><div><h2 class="discord-heading">Discord</h2><p id="discord-status">Fechado · conta secundária</p></div><button id="discord-open" class="secondary" type="button">Abrir Discord</button></div>
+      <details id="discord-settings"><summary title="Alterar o endereço se a sala mudar">Trocar link da sala</summary>
+        <form id="discord-form"><label for="discord-url">Link da sala de voz</label><div class="input-row"><input id="discord-url" type="url" placeholder="https://discord.com/channels/…/…" required><button class="primary" type="submit">Salvar</button></div><p>A sala do jogo já está configurada. Altere somente se o endereço mudar.</p></form>
+      </details>
+      <div class="discord-actions"><button id="discord-room" class="secondary" type="button">Ir para sala</button><button id="discord-stop" class="secondary" type="button">Encerrar</button><span>Microfone bloqueado · saída sempre silenciada.</span></div>
+      <p id="discord-notice" role="status"></p>
     </section>
 
     <section class="settings-strip" aria-label="Preferências">

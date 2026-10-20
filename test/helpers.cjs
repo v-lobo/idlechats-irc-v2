@@ -3,6 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const { createRequire } = require("node:module");
 
 function fakeClock() {
   let now = 1_000_000;
@@ -45,7 +46,7 @@ function loadSource(name, mocks, globals, extraSource = "") {
   const file = path.join(__dirname, "..", "src", name);
   const context = {
     module: { exports: {} },
-    require: (id) => Object.hasOwn(mocks, id) ? mocks[id] : require(id),
+    require: (id) => Object.hasOwn(mocks, id) ? mocks[id] : createRequire(file)(id),
     console, Buffer, process, URL, URLSearchParams, AbortSignal,
     __dirname: path.dirname(file), ...globals
   };

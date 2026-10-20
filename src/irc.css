@@ -6,7 +6,7 @@ button { cursor: pointer; }
 .app-shell { max-width: 620px; margin: 0 auto; padding: 13px 15px 10px; }
 h1, h2, p { margin: 0; }
 .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.topbar-actions { display: flex; align-items: center; gap: 6px; }
+.topbar-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .brand { display: flex; align-items: center; gap: 9px; }
 .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; color: #fff; background: #9147ff; font-size: 19px; font-weight: 800; }
 h1 { font-size: 15px; letter-spacing: -.3px; }
@@ -94,3 +94,20 @@ details[open] > summary::before { transform: rotate(90deg); }
 #diagnostic-results li[data-status="passed"] { color: #079767; }
 #diagnostic-results li[data-status="failed"] { color: #bd4c32; }
 @media (max-width: 560px) { body { min-width: 360px; } .app-shell { padding: 10px; } .state-pill { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } }
+
+.discord-card > details { padding: 0 10px; }
+.discord-card form { display: grid; gap: 6px; padding-bottom: 8px; }
+.discord-card form label, .discord-card form p { font-size: 10px; color: #655d73; }
+.discord-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 7px 10px; border-top: 1px solid #f0edf3; }
+.discord-actions span { font-size: 9px; color: #827b8d; }
+#discord-notice { padding: 0 10px 6px; font-size: 10px; color: #655d73; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #5865f2; outline-offset: 2px; }
+
+#discord-settings > summary { justify-content: flex-start; gap: 5px; width: fit-content; min-height: 26px; font-size: 9px; font-weight: 500; color: #827b8d; }
+.discord-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.discord-voice { font-weight: 400; white-space: nowrap; }
+.discord-voice[data-state="connected"] { color: #087b57; border-color: #c7ecdf; }
+.discord-voice[data-state="connected"] i { background: #14b879; box-shadow: 0 0 0 3px #d7f6e9; }
+.discord-voice:is([data-state="checking"], [data-state="connecting"], [data-state="wrong-room"], [data-state="unknown"]) i { background: #d09a23; }
+.discord-voice:is([data-state="disconnected"], [data-state="offline"]) i { background: #c75c5c; }
+#discord-status { max-width: 340px; line-height: 1.45; }

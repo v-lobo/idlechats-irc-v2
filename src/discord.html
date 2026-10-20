@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+<title>Discord · IdleChats</title><link rel="stylesheet" href="discord.css"></head>
+<body>
+  <header>
+    <div class="heading"><strong>IdleChats <span>/ Discord</span></strong><span id="status" class="voice-indicator" data-state="checking" role="status"><i></i><span>Verificando voz</span></span></div>
+    <div class="actions"><button id="room" class="primary">Ir para sala</button><button id="reload">Recarregar</button>
+      <label title="Reduz a barra do IdleChats e oculta as listas de servidores e membros do Discord. Desative para voltar ao layout completo."><input type="checkbox" id="compact">Modo compacto</label><button id="hide">Ocultar e manter aberto</button></div>
+    <p>Entre com e-mail e senha ou QR; chaves de acesso desativadas. Microfone bloqueado; saída sempre silenciada.</p>
+    <p id="error" role="alert">Fechar esta janela mantém o Discord aberto no IdleChats. Para desconectar, use Encerrar no painel principal.</p>
+  </header>
+  <script src="discord-renderer.js"></script>
+</body></html>

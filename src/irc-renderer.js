@@ -166,6 +166,7 @@ function renderChannels() {
 }
 
 function render() {
+  renderDiscord();
   if (!updateAvailable) appVersion.textContent = `v${state.version || "—"}`;
   if (state.pendingLogins?.length) accountsSection.open = true;
   toggleButton.disabled = !state.channels.length || !state.accounts.some((account) => account.authenticated);
@@ -179,7 +180,7 @@ function render() {
   subhead.textContent = `${joined} JOIN(s) IRC confirmado(s) · ${state.accounts.length} conta(s) · ${state.channels.length} canal(is).`;
   globalStatus.textContent = state.running
     ? "IRC confirma as entradas nos chats; o jogo pode levar alguns minutos para atualizar o bônus."
-    : "Pronto para conectar. Nenhuma janela ou guia de chat será criada.";
+    : "Twitch pronta para conectar por IRC.";
   if (hasConfigurationError) globalStatus.textContent = "O cadastro Twitch do app precisa usar Client Type Public. Aguarde a correção do responsável pelo IdleChats.";
   else if (state.accounts.some((account) => account.connectionState === "authentication-error")) globalStatus.textContent = "Use + em Contas Twitch para autorizar novamente as contas indicadas.";
   if (state.message) notice.textContent = state.message;
@@ -264,6 +265,37 @@ traySetting.addEventListener("change", async () => {
 
 window.idleChats.onState((next) => { state = next; render(); });
 window.idleChats.getState().then((next) => { state = next; render(); }).catch(reportError);
+
+function renderDiscord() {
+  const discord = state.discord || {};
+  const voice = discord.voice || { state: "closed", label: "Fechado", detail: "Discord encerrado." };
+  const indicator = document.querySelector("#discord-voice");
+  indicator.dataset.state = voice.state;
+  indicator.querySelector("span").textContent = voice.label;
+  indicator.title = voice.detail;
+  document.querySelector("#discord-status").textContent = voice.state === "connected" ? "Conexão na sala configurada." : `${voice.detail}${discord.hidden ? " · em segundo plano" : ""}`;
+  document.querySelector("#discord-status").title = discord.status || "Fechado";
+  document.querySelector("#discord-open").textContent = discord.active ? "Mostrar Discord" : "Abrir Discord";
+  document.querySelector("#discord-room").disabled = !discord.url;
+  document.querySelector("#discord-stop").disabled = !discord.active;
+  const input = document.querySelector("#discord-url");
+  if (!input.dataset.edited && document.activeElement !== input) input.value = discord.url || "";
+}
+async function discordAction(action, value) {
+  try {
+    state.discord = await window.idleChats.discordAction(action, value);
+    renderDiscord();
+    document.querySelector("#discord-notice").textContent = action === "save" ? "Sala salva. Use Ir para sala e conecte pelo Discord." : "";
+    return true;
+  } catch (error) { document.querySelector("#discord-notice").textContent = error.message; return false; }
+}
+for (const action of ["open", "room", "stop"]) document.querySelector(`#discord-${action}`).addEventListener("click", () => discordAction(action));
+document.querySelector("#discord-url").addEventListener("input", event => { event.target.dataset.edited = "true"; });
+document.querySelector("#discord-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const input = document.querySelector("#discord-url");
+  if (await discordAction("save", input.value)) { delete input.dataset.edited; document.querySelector("#discord-settings").open = false; }
+});
 
 checkUpdatesButton.addEventListener("click", async () => {
   checkUpdatesButton.disabled = true;

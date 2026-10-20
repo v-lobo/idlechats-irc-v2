@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, safeStorag
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { DiscordSession, DEFAULT_DISCORD_ROOM } = require("./discord-session");
 const { TwitchIrcClient } = require("./twitch-irc");
 const { writeJson, appendConnectionLog } = require("./local-files");
 const {
@@ -26,9 +27,13 @@ const channelsFile = () => path.join(app.getPath("userData"), "channels.json");
 const accountsFile = () => path.join(app.getPath("userData"), "accounts.json");
 const connectionLogFile = () => path.join(app.getPath("userData"), "connections.log");
 
+let discord;
+let discordSettings = { url: DEFAULT_DISCORD_ROOM, compact: false };
 let mainWindow;
 let tray;
 let isQuitting = false;
+let discordShutdownReady = false;
+let discordShutdownTask;
 let channels = [];
 let accounts = [];
 let clientId = "";
@@ -71,7 +76,7 @@ function decryptTokens(value) {
 }
 
 async function saveSettings() {
-  await writeJson(settingsFile(), { preferences });
+  await writeJson(settingsFile(), { preferences, discord: discordSettings });
 }
 
 async function saveChannels() {
@@ -91,6 +96,8 @@ async function saveAccounts() {
 
 async function loadData() {
   const savedSettings = await readJson(settingsFile(), {});
+  discordSettings = { url: DEFAULT_DISCORD_ROOM, compact: savedSettings.discord?.compact === true };
+  try { if (savedSettings.discord?.url) discordSettings.url = require("./discord-session").channelUrl(savedSettings.discord.url); } catch {}
   clientId = TWITCH_CLIENT_ID;
   preferences = {
     minimizeToTray: savedSettings.preferences?.minimizeToTray === true,
@@ -144,6 +151,7 @@ function targetChannels() {
 function publicState() {
   const desired = targetChannels();
   return {
+    discord: discord?.state() || { ...discordSettings, active: false, status: "Fechado" },
     version: app.getVersion(),
     diagnostic: { ...diagnostic, results: diagnostic.results.map((result) => ({ ...result })) },
     channels: priorityOrderedChannels().map(({ name }) => {
@@ -585,6 +593,7 @@ function updateTrayMenu() {
   if (!tray || tray.isDestroyed()) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Abrir IdleChats IRC", click: showMainWindow },
+    { label: "Abrir Discord", click: () => discord.open() },
     { label: running ? "Parar conexões IRC" : "Iniciar conexões IRC", enabled: accounts.some((item) => item.accessToken) && channels.length > 0, click: toggleChats },
     { type: "separator" },
     { label: "Sair", click: () => { isQuitting = true; app.quit(); } }
@@ -609,7 +618,7 @@ function createMainWindow() {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.on("minimize", () => { if (preferences.minimizeToTray) hideMainWindow(); });
   mainWindow.on("close", (event) => { if (preferences.minimizeToTray && !isQuitting) { event.preventDefault(); hideMainWindow(); } });
-  mainWindow.on("closed", () => { mainWindow = null; });
+  mainWindow.on("closed", () => { mainWindow = null; if (!isQuitting) app.quit(); });
 }
 
 function wait(ms, pending) {
@@ -832,6 +841,7 @@ ipcMain.handle("set-live-only", async (_event, value) => {
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
   await loadData();
   if (!safeStorage.isEncryptionAvailable()) throw new Error("A criptografia local do Windows está indisponível; as contas não serão carregadas.");
+  discord = new DiscordSession({ settings: discordSettings, save: saveSettings, changed: broadcastState });
   createMainWindow();
   createTray();
   logConnection("app-start", { reason: app.getVersion() });
@@ -848,8 +858,22 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   isQuitting = true;
+  if (discord && !discordShutdownReady) {
+    event.preventDefault();
+    if (!discordShutdownTask) {
+      discord.quitting = true;
+      stopChats();
+      discordShutdownTask = discord.stop().catch(() => {
+        console.warn("Não foi possível concluir o salvamento da sessão do Discord ao sair.");
+      }).finally(() => {
+        discordShutdownReady = true;
+        app.quit();
+      });
+    }
+    return;
+  }
   clearInterval(liveCheckTimer);
   clearInterval(metricsTimer);
   for (const account of accounts) clearTimeout(account.refreshTimer);

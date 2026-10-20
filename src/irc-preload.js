@@ -3,6 +3,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("idleChats", {
+  discordAction: (action, value) => ipcRenderer.invoke("discord-action", action, value),
   getState: () => ipcRenderer.invoke("get-state"),
   testConnections: (kind) => ipcRenderer.invoke("test-connections", kind),
   networkRestored: () => ipcRenderer.invoke("network-restored"),
