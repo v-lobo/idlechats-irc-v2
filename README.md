@@ -1,132 +1,189 @@
 # IdleChats IRC V2
 
-Repositório desta versão: [v-lobo/idlechats-irc-v2](https://github.com/v-lobo/idlechats-irc-v2). A versão 2.1.0 adiciona o Discord integrado, com sessão persistente e indicação da sala de voz conectada.
+**Presença nos chats da Twitch em segundo plano, com várias contas e sem abrir uma aba por canal.**
 
-Aplicativo Electron para manter presença em chats Twitch usando uma conexão IRC por conta. Não abre páginas de chat nem várias janelas de navegador. O app não mostra, salva nem envia mensagens de chat.
+O IdleChats é um aplicativo para Windows feito com Electron. Ele usa uma conexão IRC por conta Twitch, prioriza os canais ao vivo e recupera conexões após falhas de rede. A versão 2.1.0 também inclui um painel experimental do Discord, com login persistente e indicador da sala de voz.
 
-## Requisitos
+[Baixar versão mais recente](https://github.com/v-lobo/idlechats-irc-v2/releases/latest) · [Reportar um problema](https://github.com/v-lobo/idlechats-irc-v2/issues)
 
-- Windows 10 ou posterior
-- Node.js 22.12 ou posterior e npm
-- Internet para instalar o Electron e conectar à Twitch
+## Recursos
 
-## Iniciar
+- **Várias contas Twitch:** cada conta tem sua própria autorização e conexão IRC.
+- **5 canais conectados por conta:** os canais ao vivo têm prioridade, com a opção de conectar somente a eles.
+- **Recuperação automática:** reconexão após falhas de rede e suspensão do computador, além de renovação das sessões Twitch.
+- **Execução na bandeja:** mantenha o app funcionando com a janela principal fechada.
+- **Diagnóstico integrado:** teste a renovação de sessão e a volta aos chats pelo próprio aplicativo.
+- **Discord incorporado:** sessão separada, modo compacto e indicação da conexão de voz.
+- **Métricas no rodapé:** memória privada aproximada, uso agregado de CPU e presenças IRC confirmadas.
 
-Clone ou baixe este repositório e abra `Abrir IdleChats.vbs`. Na primeira execução, o lançador instala as dependências do `package-lock.json` e inicia o app. Se a instalação falhar, consulte `install-electron.log` na pasta do app. Também é possível executar:
+A integração Twitch não exibe, salva nem envia mensagens de chat. O painel Discord carrega a interface web do próprio Discord e consome recursos adicionais.
+
+## Índice
+
+- [Instalação](#instalação)
+- [Primeiros passos](#primeiros-passos)
+- [Discord](#discord)
+- [Dados e privacidade](#dados-e-privacidade)
+- [Atualização](#atualização)
+- [Solução de problemas](#solução-de-problemas)
+
+## Instalação
+
+### Requisitos
+
+- Windows 10 ou posterior.
+- [Node.js](https://nodejs.org/en/download/) **22.12 ou posterior**, com npm e a opção de adicionar ao `PATH` habilitada na instalação.
+- Internet para baixar as dependências e conectar aos serviços.
+
+### Pelo lançador
+
+1. Acesse a [última Release](https://github.com/v-lobo/idlechats-irc-v2/releases/latest) e baixe **Source code (zip)**.
+2. Extraia o ZIP para uma pasta no computador.
+3. Abra **`Abrir IdleChats.vbs`**.
+
+Na primeira execução, o lançador instala as dependências e baixa o Electron. Aguarde a abertura da janela. Se houver falha, consulte `install-electron.log` na pasta do aplicativo.
+
+### Pelo terminal
+
+Se você tem Git instalado, execute no PowerShell:
 
 ```powershell
+git clone https://github.com/v-lobo/idlechats-irc-v2.git
+cd idlechats-irc-v2
 npm ci
 npm start
 ```
 
-## Configuração e login
+Se baixou o ZIP, abra o terminal na pasta extraída e execute apenas `npm ci` e `npm start`.
 
-1. Clique em **+** ao lado de Contas Twitch.
-2. Autorize a conta em `twitch.tv/activate` e aceite as permissões solicitadas.
-3. Cadastre canais e inicie as conexões IRC.
+## Primeiros passos
 
-O Client ID público do IdleChats já vem integrado. Cada usuário autoriza as próprias contas; os tokens ficam criptografados localmente pelo armazenamento seguro do Windows. Não há Client Secret no app.
+1. Clique em **+**, ao lado de **Contas Twitch**.
+2. Siga as instruções de autorização em `twitch.tv/activate`. Confira se está usando a conta desejada no navegador.
+3. Repita o processo para cada conta que quiser adicionar.
+4. Confira a lista em **Canais → Cadastrados**. Para incluir outro canal, use **Adicionar canal** e informe o nome, como `nome_do_canal`.
+5. Escolha se deseja manter **Somente ao vivo** ativado e clique em **Iniciar IRC**.
+6. Ative **Minimizar na bandeja** se quiser fechar a janela principal sem interromper as conexões.
 
-O registro do app no Twitch Developer Console precisa ter **Client Type: Public**. A visibilidade pública do repositório GitHub não define esse tipo. Cadastros Confidential exigem Client Secret ao renovar sessões; o IdleChats confirma a renovação logo após o login, antes de salvar a sessão. Os usuários do app não precisam criar cadastros próprios no console.
+O Client ID público já vem integrado: você não precisa criar uma aplicação no console da Twitch nem configurar um Client Secret.
 
-O login usa Device Code Grant e pede `chat:read` e `chat:edit`, exigidos pela conexão IRC da Twitch. O app não oferece recursos para ler ou enviar mensagens: as linhas recebidas pelo protocolo são descartadas em memória.
+### Como os canais são escolhidos
 
-## Canais e prioridade
+O app seleciona até **cinco canais da lista para cada conta**, dando prioridade aos que estão ao vivo. Todas as contas usam essa mesma seleção. Entre canais no mesmo estado, vale a ordem cadastrada.
 
-Canais ao vivo ficam no topo da lista e têm prioridade para as cinco vagas de cada conta. Entre canais no mesmo estado, o app conserva a ordem cadastrada. A opção **Somente ao vivo** impede conexões com canais offline. O status online é consultado uma vez por minuto por um serviço experimental de terceiros e pode atrasar ou falhar.
+Com **Somente ao vivo** ativado, apenas canais identificados como ao vivo entram na seleção. O status é consultado a cada minuto por um serviço experimental de terceiros, o DecAPI, e pode atrasar ou falhar. Use **Verificar** para solicitar uma nova consulta.
 
-## Dados e limitações
+### Pausar ou encerrar
 
-- As sessões e os canais ficam na pasta de dados local `IdleChats IRC V2`; não são compartilhados entre usuários nem enviados a este repositório.
-- O app renova os tokens antes de expirarem e repete falhas temporárias de rede. Como o app Twitch usa Device Code Grant público, a Twitch pode invalidar refresh tokens após 30 dias sem uso; nesse caso, a conta precisa ser autorizada novamente.
-- Conexões sem resposta são recriadas automaticamente. O login IRC tem prazo de 30 segundos; uma checagem de conexão ocorre a cada minuto e aguarda até 30 segundos pela resposta. São comandos de manutenção do protocolo, sem envio de mensagens ao chat.
-- Após suspensão do computador ou retorno da rede, o app retoma as conexões e renova sessões expiradas. As tentativas de reconexão têm intervalos progressivos para evitar uma sequência de conexões durante uma queda de internet.
-- Cada conta Twitch precisa autorizar individualmente o app.
-- O indicador de JOIN IRC confirma a entrada no chat; um jogo ou serviço externo pode demorar alguns minutos para reconhecer a presença.
-- Minimizar na bandeja mantém as conexões em execução. Fechar completamente o app desconecta as contas.
-- O rodapé mostra memória privada aproximada dos processos do app, uso agregado de CPU e presenças IRC confirmadas.
-- Clique no número da versão no cabeçalho para consultar as Releases do GitHub. Se houver atualização, o texto mostra a versão atual e a nova com 💫; clique novamente para abrir a página da versão. Se estiver atualizado, aparece 🆗.
+- **Parar conexões** interrompe o IRC da Twitch.
+- Com **Minimizar na bandeja** ativado, fechar a janela principal mantém o app executando.
+- **Sair**, no menu da bandeja, encerra o aplicativo, as conexões Twitch e o painel Discord.
 
-## Atualizar o app
+## Discord
 
-As atualizações são instaladas manualmente. Encerre o app pela opção **Sair** da bandeja. Na página aberta pelo app, baixe **Source code (zip)** da versão mais recente e extraia os arquivos para a pasta do app, substituindo os arquivos da versão anterior. Em seguida, execute `Abrir IdleChats.vbs` novamente; se necessário, o lançador instala as dependências. Os dados locais (contas e canais) ficam em `%APPDATA%\IdleChats IRC V2` e não são substituídos pela atualização.
+O Discord abre em uma janela do IdleChats, com uma sessão separada do Discord instalado e das contas Twitch.
 
-O verificador usa as **Releases** deste repositório. Para publicar uma atualização, incremente a versão em `package.json` e crie uma Release no GitHub com a tag correspondente no formato `vMAJOR.MINOR.PATCH` (por exemplo, `v2.0.1`).
+1. Clique em **Abrir Discord** e entre com a conta secundária usando e-mail e senha ou QR code. Conclua as verificações solicitadas pelo Discord.
+2. A sala padrão já vem configurada. Para alterá-la, abra **Trocar link da sala**, cole um endereço no formato `https://discord.com/channels/servidor/sala` e clique em **Salvar**.
+3. Use **Ir para sala** e confirme a entrada pelos controles do Discord. Abrir o endereço não conecta automaticamente à voz.
+4. Ative **Modo compacto** para reduzir a barra do IdleChats e ocultar as listas de servidores e membros. Desative para acessar o layout completo.
+5. Use **Ocultar e manter aberto** para deixar o painel em segundo plano. Fechar a janela Discord também a oculta.
 
-## Revogar acesso
+**Encerrar**, no painel principal, fecha a página e interrompe sua conexão, preservando o login para a próxima abertura. Para sair da conta, use as configurações do próprio Discord. Sessões expiradas ou revogadas exigem novo login.
 
-Remova a conta no app e, se desejar, revogue a autorização do IdleChats nas configurações de conexões da Twitch.
+### Indicador de voz
 
-### Se a instalação falhar
+| Estado | Significado |
+| --- | --- |
+| **Discord ativo** | O painel mostra voz conectada ao servidor e à sala configurados. |
+| **Outra sala** | Há conexão de voz confirmada, mas em outro canal ou servidor. |
+| **Fora da sala** / **Conectando voz** | O Discord informa ausência de conexão ou conexão em andamento. |
+| **Faça login** / **Sem conexão** | A interface indica que é necessário entrar na conta ou recuperar a conexão. |
+| **Não verificado** | Não foi possível confirmar a sala ou a leitura está desatualizada. |
 
-O lançador precisa do **Node.js 22.12 ou posterior** e do npm. Instale a versão LTS pelo [site oficial do Node.js](https://nodejs.org/en/download/) e mantenha ativada a opção para adicionar o Node ao PATH. Depois, feche e abra novamente o lançador. Se o Node já estiver instalado e ainda não for encontrado, reinicie o Windows Explorer ou o computador para atualizar o PATH.
+A leitura é renovada a cada cinco segundos, inclusive com a janela oculta. Após 15 segundos sem leitura válida, a presença deixa de ser confirmada. Ter a página aberta não comprova conexão de voz.
 
-Se a instalação do Electron falhar, consulte o arquivo `install-electron.log` na pasta do app. Ele contém os detalhes do erro de instalação ou download.
+### Limitações
 
-### Se as contas ficarem em Reconectando
+- Microfone, câmera, compartilhamento de tela e outras permissões são negados. A saída de áudio permanece silenciada pelo Electron.
+- Se o Discord exigir acesso ao microfone para entrar em voz, esta versão não concede essa permissão.
+- Passkeys/chaves de acesso estão desativadas na página incorporada. Use e-mail e senha ou QR code; a segunda etapa de autenticação continua sendo exigida quando aplicável.
+- Não há reconexão automática de voz nem contador de presença. Quedas de rede e suspensão podem interromper a conexão.
+- Mudanças no layout ou idioma do Discord podem afetar o indicador e o modo compacto.
 
-Confira a conexão de internet e passe o mouse sobre o status da conta para ver o motivo e o prazo da tentativa. Para reiniciar as conexões manualmente, clique em **Parar conexões** e depois em **Iniciar IRC**. Se necessário, encerre o app pela bandeja e abra novamente.
+## Dados e privacidade
 
-O arquivo `%APPDATA%\IdleChats IRC V2\connections.log` registra mudanças de conexão, suspensão, retorno da rede e motivos técnicos das tentativas. Ele não grava tokens nem mensagens de chat. O registro tem limite de 256 KB e mantém uma cópia anterior em `connections.log.1`. Se o problema voltar a acontecer, esses arquivos permitem investigar a sequência de eventos. Uma sessão realmente revogada pela Twitch continuará exigindo autorização novamente.
+Os dados locais ficam em:
 
-### Se aparecer missing client secret ou Configuração Twitch
+```text
+%APPDATA%\IdleChats IRC V2
+```
 
-Esse erro exige correção do cadastro Twitch integrado pelo responsável do IdleChats. O app pausa as tentativas e informa a configuração necessária, em vez de tratar a resposta como falha de rede. O responsável deve cadastrar uma aplicação com **Client Type: Public**, integrar o Client ID correspondente e publicar a atualização. A [documentação de renovação da Twitch](https://dev.twitch.tv/docs/authentication/refresh-tokens/) explica quando o Client Secret é dispensado.
+| Dados | Armazenamento e uso |
+| --- | --- |
+| Contas Twitch | Tokens criptografados pelo armazenamento seguro do Windows, via Electron `safeStorage`. |
+| Canais e preferências | Arquivos locais na pasta de dados do aplicativo. |
+| Sessão Discord | Partição persistente `persist:idle-chats-discord-secondary`, dentro da pasta de dados. |
+| Diagnóstico de conexão | `connections.log` e uma cópia anterior, `connections.log.1`; limite de 256 KB por arquivo. |
 
-Ao atualizar para um Client ID diferente, as contas anteriores pedem uma nova autorização. Use **+** em Contas Twitch e autorize cada conta novamente. O app atualiza o perfil existente, sem duplicar a conta, e conserva os canais cadastrados.
+## Atualização
 
-## Testar renovação e reconexão
+As atualizações são **manuais**. Clique no número da versão, no cabeçalho, para consultar as Releases. Quando houver uma versão nova, clique novamente para abrir a página de download.
 
-Com o IRC iniciado e ao menos um canal selecionado, abra **Diagnóstico** no rodapé:
+1. Encerre o aplicativo pela opção **Sair** da bandeja.
+2. Baixe **Source code (zip)** da [Release mais recente](https://github.com/v-lobo/idlechats-irc-v2/releases/latest).
+3. Extraia para uma pasta nova e execute `Abrir IdleChats.vbs`.
 
-1. **Testar renovação** força o mesmo fluxo usado na renovação automática, sem esperar o token expirar: renova a sessão, salva os tokens, valida a autorização e confirma os JOINs nos chats.
-2. **Testar reconexão** reinicia as conexões IRC e confirma que as contas voltam aos chats selecionados.
+As contas, os canais e as preferências permanecem na pasta de dados do Windows e são reutilizados pela nova versão.
 
-O resultado aparece por conta. O app só informa **Passou** depois dos JOINs confirmados; se os canais selecionados mudarem durante o teste, ele informa **Inconclusivo**. A recuperação dos chats tem prazo de 60 segundos. Os testes interrompem a presença brevemente e não enviam mensagens de chat. Não é necessário sair da conta nem alterar o relógio do Windows.
+Se preferir substituir os arquivos na pasta existente, execute `npm ci` nessa pasta antes de abrir o app. Isso sincroniza as dependências com o novo `package-lock.json`; o lançador não reinstala automaticamente um Electron que já esteja presente.
 
-Para conferir a recuperação em condições reais, você também pode desconectar a internet por um minuto, reconectar e aguardar até dois minutos. Em outro teste, suspenda o computador e depois retome. As contas devem voltar ao IRC e recuperar as presenças automaticamente. Esses testes manuais complementam o diagnóstico; não garantem disponibilidade contínua da rede ou da Twitch.
+## Solução de problemas
 
-As renovações são registradas como `token-refreshed` em `connections.log`, sem incluir os tokens. Deixar o app aberto até a próxima renovação automática permite acompanhar também o funcionamento ao longo do tempo.
+### O lançador não abre ou a instalação falha
 
-## Verificações de desenvolvimento
+Confira as versões no PowerShell:
 
-Execute `npm test` para simular quedas de rede, conexões sem resposta, reconexão da Twitch, retomada do computador, renovação simultânea de contas e gravação concorrente dos dados, sem usar contas Twitch reais.
+```powershell
+node --version
+npm --version
+```
 
-## Discord incorporado (experimental)
+É necessário Node.js 22.12 ou posterior. Se os comandos não forem encontrados, reinstale o Node.js com npm e a opção de adicionar ao `PATH`. Após a instalação, reabra o terminal e o lançador; se necessário, reinicie o computador.
 
-O painel Discord abre uma janela do próprio IdleChats com o Discord web incorporado. A Twitch continua usando IRC; o Discord mantém uma página Chromium em execução e consome recursos adicionais.
+Para erros de download ou instalação do Electron, consulte `install-electron.log`. Você também pode executar `npm ci` na pasta do projeto para acompanhar a instalação pelo terminal.
 
-1. Clique em **Abrir Discord** e faça login com a conta secundária. O cadastro da conta e eventuais verificações são feitos pelo Discord.
-2. A sala padrão é `https://discord.com/channels/1516313244057337908/1551936385030824056` e abre automaticamente ao iniciar a janela Discord. Para mudar o endereço, use o controle discreto **Trocar link da sala** e salve o novo link. Um link personalizado já salvo é preservado.
-3. Use **Ir para sala** e confirme a entrada pelos controles do Discord. Abrir o link não garante entrada automática.
-4. Ative **Modo compacto** para reduzir a barra do IdleChats, ocultar as instruções e as listas laterais de servidores e membros. A barra diminui de 156 para 100 pixels, deixando mais espaço para a sala. Desative para voltar ao layout completo, trocar de servidor ou resolver problemas de navegação. A simplificação usa CSS e pode precisar de ajuste após mudanças do Discord.
-5. Use **Ocultar e manter aberto**. Fechar a janela Discord também a oculta. Ative **Minimizar na bandeja** no painel principal para manter todo o IdleChats executando ao fechar sua janela principal.
-6. **Encerrar** destrói a página e encerra sua conexão, preservando o login. Para sair da conta, use as configurações do próprio Discord. Sair do IdleChats encerra também o Discord.
+### As contas ficam em “Reconectando”
 
-A sessão persiste na partição `persist:idle-chats-discord-secondary`, dentro dos dados do IdleChats IRC V2, separada da Twitch e do Discord instalado. O código não extrai tokens pessoais nem automatiza chamadas à API do Discord. O conteúdo remoto não tem acesso a Node.js nem à ponte de comandos do aplicativo.
+Confira a internet e passe o mouse sobre o status da conta para ver o motivo e o prazo da próxima tentativa. O app usa intervalos progressivos entre reconexões.
 
-Ao usar **Encerrar** ou sair do IdleChats, o app aguarda o evento normal de saída da página do Discord e grava os dados locais e cookies pendentes antes de destruir a janela. Assim, o Discord pode salvar a própria autenticação e reutilizá-la na próxima abertura, sem armazenar sua senha no IdleChats. Sair da conta nas configurações do próprio Discord continua encerrando a autenticação. Uma sessão revogada ou expirada pelo Discord exige novo login.
+Para tentar manualmente, clique em **Parar conexões** e depois em **Iniciar IRC**. Se necessário, encerre pela bandeja e abra novamente. Consulte `connections.log` na pasta de dados para investigar quedas, retomadas e falhas de renovação.
 
-O login integrado usa e-mail e senha ou o QR do Discord. Solicitações de passkeys/WebAuthn são recusadas antes de chamar o autenticador do Windows, evitando o diálogo “Escolher uma chave de acesso”. Isso se aplica somente à página incorporada no IdleChats; a autenticação da conta continua sendo validada pelo Discord, incluindo a segunda etapa quando exigida.
+Se a sessão exigir nova autorização, use **+** para entrar novamente com a mesma conta. O app atualiza o perfil existente e preserva os canais.
 
-Microfone, câmera, compartilhamento de tela e outras permissões são negados; a reprodução de áudio fica silenciada pelo Electron, com o bloqueio reaplicado em navegações, início de reprodução e mudanças do estado de áudio. Isso não altera os dispositivos do Windows nem depende dos botões de mute do Discord. Caso o Discord exija permissão de microfone para entrar, esta versão não a concede e será necessário avaliar a compatibilidade. O indicador de voz lê apenas os controles da própria conta no painel do Discord. Ele não usa a URL aberta como prova de conexão nem consulta mensagens de chat, tokens ou módulos internos do Discord. Não há reconexão automática, contador de presença ou confirmação de bônus; confira a elegibilidade da conta secundária no jogo. Suspensão do computador e quedas de rede podem interromper a presença.
+### Nenhum canal recebe presença
 
+Confira se há contas autorizadas, se o IRC está iniciado e se existem canais elegíveis. Com **Somente ao vivo** ativado, canais offline ou ainda não identificados como ao vivo não são selecionados. Lembre-se do limite de cinco canais por conta.
 
-### Indicador de presença do Discord
+### Aparece “missing client secret” ou “Configuração Twitch”
 
-- **Discord ativo** (verde): o painel da conta mostra “Voz conectada” ou “Voice Connected” e o link da conexão corresponde ao servidor e à sala configurados.
-- **Outra sala** (amarelo): existe conexão de voz confirmada, mas em outro canal ou servidor.
-- **Fora da sala**, **Conectando voz**, **Faça login** ou **Sem conexão**: a interface mostra a condição correspondente.
-- **Não verificado**: o painel não pôde ser interpretado, a sala não foi identificada ou a última leitura tem mais de 15 segundos. Uma mudança no layout ou idioma do Discord pode exigir ajustes. O indicador prefere não confirmar a exibir um falso positivo.
+O cadastro Twitch integrado precisa ser do tipo **Public**. Esse erro exige uma correção pelo responsável do projeto; usuários não precisam criar um cadastro próprio. Após uma atualização que troque o Client ID, autorize novamente cada conta pelo botão **+**.
 
-A leitura acompanha mudanças no painel e é renovada a cada 5 segundos, inclusive com a janela oculta. O IPC aceita observações somente do documento principal da página `https://discord.com` incorporada na sessão atual. “Discord ativo” confirma o estado mostrado pelo Discord, não o recebimento do bônus no jogo.
+### O Discord está aberto, mas a presença não é confirmada
 
-### Verificação da integração
+Confira se o login foi concluído, se o link salvo corresponde à sala desejada e se você entrou na voz pelos controles do Discord. Use **Recarregar** se a página não responder. O estado **Não verificado** significa que o app não conseguiu confirmar a conexão pela interface.
 
-`npx electron tests/discord-smoke.cjs` executa um teste com dados temporários, sem acessar contas salvas. Requer acesso à página de login do Discord. Verifica validação do link, isolamento do conteúdo remoto, áudio silenciado, alternância do modo compacto e ciclo de ocultar/reabrir/encerrar. Não testa autenticação nem presença em voz. Capturas ficam em `dist/discord-preview/`.
+### Testar renovação e reconexão
 
-O indicador acompanha somente o documento principal. Quadros internos e mudanças de rota do Discord não recolocam uma página já aberta em “Carregando”. Se o documento principal não responder em 30 segundos, aparece uma mensagem de demora com a opção de recarregar. “Página aberta” não confirma conexão de voz.
+Com o IRC iniciado e pelo menos um canal selecionado, abra **Diagnóstico** no rodapé:
 
-`node --test tests/discord-page-status.test.cjs` verifica as transições do indicador. `npx electron tests/discord-status-smoke.cjs` reproduz o carregamento de um quadro interno lento usando um servidor local e verifica os textos nas duas janelas. Também simula os controles de voz sob uma origem Discord interceptada somente na sessão temporária de teste e verifica sala correta, outra sala, login, desconexão e atualização com a janela oculta. Esses testes não usam contas nem conexões de voz reais.
+- **Testar renovação:** renova e valida a sessão, salva os tokens e verifica a volta aos chats.
+- **Testar reconexão:** reinicia o IRC e verifica a volta aos chats selecionados.
 
-`npm run test:discord-session` verifica a persistência com dados fictícios em dois processos separados: encerramento da página, reabertura, saída normal do app com a janela oculta e nova execução. Usa um perfil temporário e não acessa a sessão real do usuário.
+Os testes interrompem brevemente a presença e não enviam mensagens. O resultado **Passou** exige confirmação dos JOINs em até 60 segundos; mudanças nos canais selecionados durante o teste podem resultar em **Inconclusivo**.
+
+Para conferir a recuperação após uma queda real, desconecte a internet por um minuto, reconecte e aguarde até dois minutos. Você também pode testar a suspensão e retomada do computador. As renovações de sessão aparecem no log como `token-refreshed`.
+
+### Reportar problemas
+
+Abra uma [issue](https://github.com/v-lobo/idlechats-irc-v2/issues) com a versão do app, a versão do Windows, os passos para reproduzir e o resultado esperado. Quando relevante, inclua o trecho do log correspondente à falha, revisando os dados antes de compartilhar. Não envie arquivos de sessão, tokens ou senhas.
