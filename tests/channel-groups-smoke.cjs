@@ -43,7 +43,7 @@ app.whenReady().then(async () => {
     const evaluate = code => main.webContents.executeJavaScript(code);
     await until(() => evaluate('document.querySelector("#channel-count-pokedream")?.textContent === "4"'), "PokeDream not seeded");
     const state = await evaluate("window.idleChats.getState()");
-    assert.equal(state.version, "2.2.0");
+    assert.equal(state.version, require("../package.json").version);
     assert.deepEqual(state.channelGroups.map(group => group.maxChannels), [5, 1]);
     assert.deepEqual(state.channels.filter(channel => channel.groupId === "pokeidleworld").map(channel => channel.name), ["existing_channel"]);
     assert.deepEqual(state.channels.filter(channel => channel.groupId === "pokedream").map(channel => channel.name), ["brucescottt", "safnaww", "StormBomb", "surtoo_"]);

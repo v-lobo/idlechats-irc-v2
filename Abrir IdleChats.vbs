@@ -3,6 +3,7 @@ Option Explicit
 Dim fso, shell, appDir, electronExe, electronPackage, installScript, logFile
 Dim versionLog, quotedLog, quotedVersionLog, versionText, versionParts, versionFile
 Dim exitCode, commandLine
+Dim checkScript, checkCommand
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -10,6 +11,7 @@ appDir = fso.GetParentFolderName(WScript.ScriptFullName)
 electronExe = fso.BuildPath(appDir, "node_modules\electron\dist\electron.exe")
 electronPackage = fso.BuildPath(appDir, "node_modules\electron\package.json")
 installScript = fso.BuildPath(appDir, "node_modules\electron\install.js")
+checkScript = fso.BuildPath(appDir, "scripts\check-electron-version.cjs")
 logFile = fso.BuildPath(appDir, "install-electron.log")
 versionLog = fso.BuildPath(appDir, "node-version.tmp")
 quotedLog = Chr(34) & logFile & Chr(34)
@@ -42,8 +44,14 @@ If exitCode <> 0 Then
   WScript.Quit 1
 End If
 
-If Not fso.FileExists(electronPackage) Then
-  commandLine = "cmd.exe /c npm ci > " & quotedLog & " 2>&1"
+checkCommand = "cmd.exe /c node " & Chr(34) & checkScript & Chr(34) & " > " & quotedLog & " 2>&1"
+exitCode = shell.Run(checkCommand, 0, True)
+If exitCode = 2 Then
+  MsgBox "Nao foi possivel conferir a versao do Electron. Extraia novamente todos os arquivos da Release. Consulte install-electron.log.", vbExclamation, "IdleChats"
+  WScript.Quit 1
+End If
+If exitCode <> 0 Then
+  commandLine = "cmd.exe /c npm ci --include=dev >> " & quotedLog & " 2>&1"
   exitCode = shell.Run(commandLine, 0, True)
   If exitCode <> 0 Or Not fso.FileExists(electronPackage) Then
     MsgBox "Nao foi possivel instalar as dependencias. Consulte install-electron.log na pasta do app.", vbExclamation, "IdleChats"
@@ -63,6 +71,12 @@ If Not fso.FileExists(electronExe) Then
     MsgBox "Nao foi possivel baixar o Electron. Consulte install-electron.log na pasta do app; a rede ou o antivirus pode ter bloqueado o download.", vbExclamation, "IdleChats"
     WScript.Quit 1
   End If
+End If
+
+exitCode = shell.Run(Replace(checkCommand, " > ", " >> "), 0, True)
+If exitCode <> 0 Then
+  MsgBox "A versao do Electron instalado nao corresponde a esta Release. Consulte install-electron.log e tente npm ci na pasta do app.", vbExclamation, "IdleChats"
+  WScript.Quit 1
 End If
 
 shell.CurrentDirectory = appDir
