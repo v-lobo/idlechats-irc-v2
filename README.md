@@ -2,14 +2,14 @@
 
 **Presença nos chats da Twitch em segundo plano, com várias contas e sem abrir uma aba por canal.**
 
-O IdleChats é um aplicativo para Windows feito com Electron. Ele usa uma conexão IRC por conta Twitch, prioriza os canais ao vivo e recupera conexões após falhas de rede. A versão 2.1.0 também inclui um painel experimental do Discord, com login persistente e indicador da sala de voz.
+O IdleChats é um aplicativo para Windows feito com Electron. Ele usa uma conexão IRC por conta Twitch, prioriza os canais ao vivo e recupera conexões após falhas de rede. A versão 2.2.0 traz uma interface compacta, contas ativas e limites configuráveis por grupo, além do painel experimental do Discord com login persistente e indicador da sala de voz.
 
 [Baixar versão mais recente](https://github.com/v-lobo/idlechats-irc-v2/releases/latest) · [Reportar um problema](https://github.com/v-lobo/idlechats-irc-v2/issues)
 
 ## Recursos
 
 - **Várias contas Twitch:** cada conta tem sua própria autorização e conexão IRC.
-- **5 canais conectados por conta:** os canais ao vivo têm prioridade, com a opção de conectar somente a eles.
+- **Grupos de canais:** limites configuráveis por conta, inicialmente 5 no PokeIdleWorld e 1 no PokeDream. A engrenagem de cada grupo permite alterar o limite e selecionar as contas ativas, com prioridade para canais ao vivo.
 - **Recuperação automática:** reconexão após falhas de rede e suspensão do computador, além de renovação das sessões Twitch.
 - **Execução na bandeja:** mantenha o app funcionando com a janela principal fechada.
 - **Diagnóstico integrado:** teste a renovação de sessão e a volta aos chats pelo próprio aplicativo.
@@ -61,17 +61,19 @@ Se baixou o ZIP, abra o terminal na pasta extraída e execute apenas `npm ci` e 
 1. Clique em **+**, ao lado de **Contas Twitch**.
 2. Siga as instruções de autorização em `twitch.tv/activate`. Confira se está usando a conta desejada no navegador.
 3. Repita o processo para cada conta que quiser adicionar.
-4. Confira a lista em **Canais → Cadastrados**. Para incluir outro canal, use **Adicionar canal** e informe o nome, como `nome_do_canal`.
-5. Escolha se deseja manter **Somente ao vivo** ativado e clique em **Iniciar IRC**.
-6. Ative **Minimizar na bandeja** se quiser fechar a janela principal sem interromper as conexões.
+4. Clique na **engrenagem** em **PokeIdleWorld** ou **PokeDream** para escolher as contas ativas e conferir os canais. Para incluir outro canal, preencha **Adicionar canal** e clique em **+**. Abaixo desse campo, ajuste **Canais ativos por conta** e clique em **Salvar** para aplicar o limite (inteiro a partir de 1).
+5. Em **Configurações**, escolha se deseja manter **Somente conectar em canais online** ativado e clique em **Iniciar IRC**.
+6. Em **Configurações**, ative **Minimizar na bandeja** se quiser fechar a janela principal sem interromper as conexões.
 
 O Client ID público já vem integrado: você não precisa criar uma aplicação no console da Twitch nem configurar um Client Secret.
 
 ### Como os canais são escolhidos
 
-O app seleciona até **cinco canais da lista para cada conta**, dando prioridade aos que estão ao vivo. Todas as contas usam essa mesma seleção. Entre canais no mesmo estado, vale a ordem cadastrada.
+O app seleciona canais até o **limite configurado para cada conta ativa no grupo**, inicialmente cinco no PokeIdleWorld e um no PokeDream. A alteração do limite é salva e aplicada ao IRC ao clicar em **Salvar**. Em **Contas ativas**, marque quais contas participam de cada grupo; a mudança é aplicada ao IRC e salva automaticamente. Todas começam ativas por padrão. A prioridade é dos canais ao vivo; entre canais no mesmo estado, vale a ordem cadastrada. Vagas livres de um grupo não aumentam o limite do outro.
 
-Com **Somente ao vivo** ativado, apenas canais identificados como ao vivo entram na seleção. O status é consultado a cada minuto por um serviço experimental de terceiros, o DecAPI, e pode atrasar ou falhar. Use **Verificar** para solicitar uma nova consulta.
+Os canais já salvos são preservados no PokeIdleWorld. Na primeira execução desta atualização, o PokeDream é cadastrado com **brucescottt, safnaww, StormBomb e surtoo_**. Alterações posteriores, inclusive remoções, permanecem salvas ao reiniciar. Se um canal estiver selecionado nos dois grupos, a conexão IRC usa um único JOIN para ele.
+
+Com **Somente conectar em canais online** ativado em **Configurações**, apenas canais identificados como ao vivo entram na seleção. O status é consultado a cada minuto por um serviço experimental de terceiros, o DecAPI, e pode atrasar ou falhar. Use **Atualizar canais** para consultar os dois grupos. Abra uma linha de canal para conferir os estados individuais das contas.
 
 ### Pausar ou encerrar
 
@@ -84,7 +86,7 @@ Com **Somente ao vivo** ativado, apenas canais identificados como ao vivo entram
 O Discord abre em uma janela do IdleChats, com uma sessão separada do Discord instalado e das contas Twitch.
 
 1. Clique em **Abrir Discord** e entre com a conta secundária usando e-mail e senha ou QR code. Conclua as verificações solicitadas pelo Discord.
-2. A sala padrão já vem configurada. Para alterá-la, abra **Trocar link da sala**, cole um endereço no formato `https://discord.com/channels/servidor/sala` e clique em **Salvar**.
+2. A sala padrão já vem configurada. Para alterá-la, clique na **engrenagem do Discord → Trocar link da sala**, cole um endereço no formato `https://discord.com/channels/servidor/sala` e clique em **Salvar**. As ações **Ir para sala** e **Encerrar** também ficam dentro da engrenagem.
 3. Use **Ir para sala** e confirme a entrada pelos controles do Discord. Abrir o endereço não conecta automaticamente à voz.
 4. Ative **Modo compacto** para reduzir a barra do IdleChats e ocultar as listas de servidores e membros. Desative para acessar o layout completo.
 5. Use **Ocultar e manter aberto** para deixar o painel em segundo plano. Fechar a janela Discord também a oculta.
@@ -163,7 +165,7 @@ Se a sessão exigir nova autorização, use **+** para entrar novamente com a me
 
 ### Nenhum canal recebe presença
 
-Confira se há contas autorizadas, se o IRC está iniciado e se existem canais elegíveis. Com **Somente ao vivo** ativado, canais offline ou ainda não identificados como ao vivo não são selecionados. Lembre-se do limite de cinco canais por conta.
+Confira se há contas autorizadas e ativas no grupo, se o IRC está iniciado e se existem canais elegíveis. Com **Somente conectar em canais online** ativado, canais offline ou ainda não identificados como ao vivo não são selecionados. Confira o limite de canais por conta na engrenagem de cada grupo.
 
 ### Aparece “missing client secret” ou “Configuração Twitch”
 
@@ -175,7 +177,7 @@ Confira se o login foi concluído, se o link salvo corresponde à sala desejada 
 
 ### Testar renovação e reconexão
 
-Com o IRC iniciado e pelo menos um canal selecionado, abra **Diagnóstico** no rodapé:
+Com o IRC iniciado e pelo menos um canal selecionado, abra **Configurações → Diagnóstico** no rodapé:
 
 - **Testar renovação:** renova e valida a sessão, salva os tokens e verifica a volta aos chats.
 - **Testar reconexão:** reinicia o IRC e verifica a volta aos chats selecionados.

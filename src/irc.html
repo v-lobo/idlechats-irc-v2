@@ -1,76 +1,48 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://static-cdn.jtvnw.net https://*.jtvnw.net">
-  <title>IdleChats IRC V2</title>
-  <link rel="stylesheet" href="irc.css">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://static-cdn.jtvnw.net https://*.jtvnw.net">
+<title>IdleChats IRC V2</title><link rel="stylesheet" href="irc.css">
 </head>
-<body>
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="brand"><span class="brand-mark">T</span><div><h1>IdleChats <button id="app-version" class="version-control" type="button" title="Clique para verificar atualizações">v—</button></h1><p>Presença nos chats em segundo plano</p></div></div>
-      <div class="topbar-actions"><span id="discord-voice" class="indicator discord-voice" data-state="closed" role="status"><i></i><span>Fechado</span></span><span id="connection-indicator" class="indicator" data-running="false"><i></i><span>Parado</span></span></div>
-    </header>
-
-    <section class="hero">
-      <div><h2 id="headline">Conexões de chat</h2><p id="subhead">Conecte uma conta e cadastre os canais.</p></div>
-      <button id="toggle-button" class="primary" type="button" disabled>Iniciar IRC</button>
-      <p id="global-status" class="global-status" role="status">Nenhuma janela ou guia de chat será criada.</p>
-    </section>
-
-    <section class="accounts-panel" aria-label="Contas Twitch">
-      <div class="accounts-heading">
-        <details id="accounts-section"><summary><span>Contas Twitch</span><span id="account-count" class="count">0</span></summary></details>
-        <button id="add-account" class="icon-button" type="button" title="Adicionar conta Twitch" aria-label="Adicionar conta">+</button>
-      </div>
-      <p id="account-summary" class="account-summary">Nenhuma conta conectada</p>
-      <div id="pending-list" class="pending-list"></div>
-      <div id="account-list" class="account-list"></div>
-    </section>
-
-    <section class="card channel-manager" aria-label="Canais Twitch">
-      <div class="channel-manager-top">
-        <div><h2>Canais</h2><p id="live-updated">Consulta a cada 1 minuto.</p></div>
-        <button id="check-live" class="secondary" type="button">Verificar</button>
-      </div>
-      <details id="channels-section">
-        <summary><span>Cadastrados</span><span id="channel-count" class="count">0</span></summary>
-        <div id="channel-list" class="channel-list"></div>
-        <p id="empty-state" class="empty" hidden>Nenhum canal cadastrado.</p>
-      </details>
-      <details id="add-section" class="add-section">
-        <summary><span>Adicionar canal</span><span class="chevron">+</span></summary>
-        <form id="channel-form">
-          <label for="channel-input">Nome do canal</label>
-          <div class="input-row"><span>#</span><input id="channel-input" placeholder="nome_do_canal" autocomplete="off" required><button class="primary small" type="submit" aria-label="Adicionar canal">+</button></div>
-        </form>
-      </details>
-    </section>
-
-    <section class="card discord-card" aria-label="Discord">
-      <div class="channel-manager-top"><div><h2 class="discord-heading">Discord</h2><p id="discord-status">Fechado · conta secundária</p></div><button id="discord-open" class="secondary" type="button">Abrir Discord</button></div>
-      <details id="discord-settings"><summary title="Alterar o endereço se a sala mudar">Trocar link da sala</summary>
-        <form id="discord-form"><label for="discord-url">Link da sala de voz</label><div class="input-row"><input id="discord-url" type="url" placeholder="https://discord.com/channels/…/…" required><button class="primary" type="submit">Salvar</button></div><p>A sala do jogo já está configurada. Altere somente se o endereço mudar.</p></form>
-      </details>
-      <div class="discord-actions"><button id="discord-room" class="secondary" type="button">Ir para sala</button><button id="discord-stop" class="secondary" type="button">Encerrar</button><span>Microfone bloqueado · saída sempre silenciada.</span></div>
-      <p id="discord-notice" role="status"></p>
-    </section>
-
-    <section class="settings-strip" aria-label="Preferências">
-      <label><input id="live-only" type="checkbox" checked><span>Somente ao vivo · máx. 5/conta</span></label>
-      <label><input id="minimize-to-tray" type="checkbox"><span>Minimizar na bandeja</span></label>
-    </section>
-    <p id="notice" class="notice" role="status"></p>
-    <footer><p id="runtime-metrics" class="runtime-metrics">Memória medindo · CPU medindo · 0 presenças IRC</p><p id="update-status" class="update-status" role="status"></p>
-      <details class="diagnostics"><summary>Diagnóstico</summary>
-        <p>Os testes renovam as sessões ou reiniciam o IRC e conferem a volta aos chats. A presença será interrompida brevemente.</p>
-        <div class="diagnostic-actions"><button id="test-renewal" class="secondary" type="button">Testar renovação</button><button id="test-reconnect" class="secondary" type="button">Testar reconexão</button></div>
-        <p id="diagnostic-summary" role="status" aria-live="polite"></p><ul id="diagnostic-results"></ul>
-      </details>
-    </footer>
-  </main>
-  <script src="irc-renderer.js"></script>
-</body>
-</html>
+<body><main class="app-shell">
+<header class="topbar">
+<div class="brand"><img class="brand-mark" src="app-icon.svg" alt="" width="30" height="30"><div><h1>IdleChats <button id="app-version" class="version-control" type="button" title="Verificar atualizações">v—</button></h1><p id="subhead">Conecte sua conta Twitch.</p></div></div>
+<div class="topbar-actions"><div class="topbar-statuses"><span id="discord-voice" class="indicator discord-voice" data-state="closed" role="status"><i></i><span>Discord fechado</span></span><span id="connection-indicator" class="indicator" data-running="false"><i></i><span>IRC parado</span></span></div><button id="toggle-button" class="primary" type="button" disabled>Iniciar IRC</button></div>
+</header>
+<p id="global-status" class="notice" role="status"></p>
+<section class="accounts-panel" aria-label="Contas Twitch">
+<div class="accounts-heading"><details id="accounts-section"><summary><span>Contas Twitch <span id="account-count" class="count">0</span></span><span id="account-summary" class="muted">Nenhuma conta</span></summary></details><button id="add-account" class="icon-button" type="button" title="Adicionar conta Twitch" aria-label="Adicionar conta Twitch">+</button></div>
+<div id="pending-list" class="pending-list"></div><div id="account-list" class="account-list"></div>
+</section>
+<div class="channels-toolbar"><button id="check-live" class="text-button" type="button">Atualizar canais</button><span id="last-checked" class="muted">A cada minuto</span></div>
+<section class="card channel-manager" aria-label="PokeIdleWorld">
+<div class="channel-manager-top"><div><h2>PokeIdleWorld</h2><p id="live-updated"></p></div><div class="group-actions"><span id="channel-count" class="count" title="Canais cadastrados">0</span><button id="group-settings" class="gear-button" type="button" aria-label="Configurar PokeIdleWorld" title="Configurar PokeIdleWorld" aria-controls="channels-section" aria-expanded="false"><svg class="settings-icon" aria-hidden="true"><use href="settings-icon.svg#settings"/></svg></button></div></div>
+<details id="channels-section" class="group-management"><summary class="sr-only">Configurar grupo</summary>
+<div class="group-accounts-section"><div class="section-label">Contas ativas <span id="group-account-count" class="count">0</span></div><div id="group-account-list" class="group-account-list"></div></div>
+<div id="channel-list" class="channel-list"></div><p id="empty-state" class="empty" hidden>Nenhum canal cadastrado.</p>
+<form id="channel-form"><label class="sr-only" for="channel-input">Adicionar canal ao PokeIdleWorld</label><div class="input-row"><span>#</span><input id="channel-input" placeholder="Adicionar canal" autocomplete="off" required><button class="secondary" type="submit" aria-label="Adicionar canal ao PokeIdleWorld">+</button></div></form>
+<form id="limit-form" class="limit-form"><label for="channel-limit">Canais ativos por conta</label><input id="channel-limit" type="number" min="1" step="1" value="5" required><button class="secondary" type="submit">Salvar</button><span id="limit-feedback" class="muted" role="status"></span></form>
+</details></section>
+<section class="card channel-manager" aria-label="PokeDream">
+<div class="channel-manager-top"><div><h2>PokeDream</h2><p id="live-updated-pokedream"></p></div><div class="group-actions"><span id="channel-count-pokedream" class="count" title="Canais cadastrados">0</span><button id="group-settings-pokedream" class="gear-button" type="button" aria-label="Configurar PokeDream" title="Configurar PokeDream" aria-controls="channels-section-pokedream" aria-expanded="false"><svg class="settings-icon" aria-hidden="true"><use href="settings-icon.svg#settings"/></svg></button></div></div>
+<details id="channels-section-pokedream" class="group-management"><summary class="sr-only">Configurar grupo</summary>
+<div class="group-accounts-section"><div class="section-label">Contas ativas <span id="group-account-count-pokedream" class="count">0</span></div><div id="group-account-list-pokedream" class="group-account-list"></div></div>
+<div id="channel-list-pokedream" class="channel-list"></div><p id="empty-state-pokedream" class="empty" hidden>Nenhum canal cadastrado.</p>
+<form id="channel-form-pokedream"><label class="sr-only" for="channel-input-pokedream">Adicionar canal ao PokeDream</label><div class="input-row"><span>#</span><input id="channel-input-pokedream" placeholder="Adicionar canal" autocomplete="off" required><button class="secondary" type="submit" aria-label="Adicionar canal ao PokeDream">+</button></div></form>
+<form id="limit-form-pokedream" class="limit-form"><label for="channel-limit-pokedream">Canais ativos por conta</label><input id="channel-limit-pokedream" type="number" min="1" step="1" value="1" required><button class="secondary" type="submit">Salvar</button><span id="limit-feedback-pokedream" class="muted" role="status"></span></form>
+</details></section>
+<section class="card discord-card" aria-label="Discord">
+<div class="channel-manager-top"><div class="discord-title"><h2>Discord</h2></div><div class="group-actions"><button id="discord-open" class="secondary" type="button">Abrir Discord</button><button id="discord-options" class="gear-button" type="button" aria-label="Configurar Discord" title="Configurar Discord" aria-controls="discord-controls" aria-expanded="false"><svg class="settings-icon" aria-hidden="true"><use href="settings-icon.svg#settings"/></svg></button></div></div>
+<details id="discord-controls"><summary class="sr-only">Configurar Discord</summary>
+<p id="discord-status" class="muted">Discord encerrado.</p>
+<div class="discord-actions"><button id="discord-room" class="secondary" type="button">Ir para sala</button><button id="discord-stop" class="secondary" type="button">Encerrar</button><span class="muted">Microfone e saída silenciados.</span></div>
+<details id="discord-settings"><summary>Trocar link da sala</summary><form id="discord-form"><label class="sr-only" for="discord-url">Link da sala de voz</label><div class="input-row"><input id="discord-url" type="url" placeholder="https://discord.com/channels/…/…" required><button class="secondary" type="submit">Salvar</button></div></form></details>
+</details><p id="discord-notice" class="notice" role="status"></p>
+</section>
+<p id="notice" class="notice" role="status"></p><p id="update-status" class="notice" role="status"></p>
+<footer><details id="settings-section"><summary>Configurações<span class="chevron">⌄</span></summary><div class="settings-body"><label><input id="live-only" type="checkbox" checked>Somente conectar em canais online</label>
+<label><input id="minimize-to-tray" type="checkbox">Minimizar na bandeja</label><p id="runtime-metrics" class="muted">Medindo recursos…</p>
+<details class="diagnostics"><summary>Diagnóstico</summary><p class="muted">Os testes interrompem brevemente a presença nos chats.</p><div class="diagnostic-actions"><button id="test-renewal" class="secondary" type="button">Testar renovação</button><button id="test-reconnect" class="secondary" type="button">Testar reconexão</button></div><p id="diagnostic-summary" role="status" aria-live="polite"></p><ul id="diagnostic-results"></ul></details>
+</div></details></footer>
+</main><script src="irc-renderer.js"></script></body></html>
