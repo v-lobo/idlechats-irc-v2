@@ -2,7 +2,7 @@
 
 **Presença nos chats da Twitch em segundo plano, com várias contas e sem abrir uma aba por canal.**
 
-O IdleChats é um aplicativo para Windows feito com Electron. Ele usa uma conexão IRC por conta Twitch, prioriza os canais ao vivo e recupera conexões após falhas de rede. A versão 2.2.0 traz uma interface compacta, contas ativas e limites configuráveis por grupo, além do painel experimental do Discord com login persistente e indicador da sala de voz.
+O IdleChats é um aplicativo para Windows feito com Electron. Ele usa uma conexão IRC por conta Twitch, prioriza os canais ao vivo e recupera conexões após falhas de rede. A versão 2.2.1 atualiza o Electron para 45.2.3 e sincroniza automaticamente sua versão pelo lançador. O app conta com uma interface compacta, contas ativas e limites configuráveis por grupo, além do painel experimental do Discord com login persistente e indicador da sala de voz.
 
 [Baixar versão mais recente](https://github.com/v-lobo/idlechats-irc-v2/releases/latest) · [Reportar um problema](https://github.com/v-lobo/idlechats-irc-v2/issues)
 
@@ -138,7 +138,7 @@ As atualizações são **manuais**. Clique no número da versão, no cabeçalho,
 
 As contas, os canais e as preferências permanecem na pasta de dados do Windows e são reutilizados pela nova versão.
 
-Se preferir substituir os arquivos na pasta existente, execute `npm ci` nessa pasta antes de abrir o app. Isso sincroniza as dependências com o novo `package-lock.json`; o lançador não reinstala automaticamente um Electron que já esteja presente.
+Se preferir substituir os arquivos na pasta existente, feche o app e copie todos os arquivos da nova Release, incluindo a pasta `scripts`. Ao abrir `Abrir IdleChats.vbs`, o lançador compara o Electron instalado com a versão exigida pelo `package-lock.json` e atualiza as dependências automaticamente quando necessário. Aguarde a abertura da janela; essa atualização precisa de internet. Pelo terminal, execute `npm ci` antes de `npm start`.
 
 ## Solução de problemas
 
