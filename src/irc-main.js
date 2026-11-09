@@ -7,17 +7,19 @@ const { randomUUID } = require("node:crypto");
 const { DiscordSession, DEFAULT_DISCORD_ROOM } = require("./discord-session");
 const { TwitchIrcClient } = require("./twitch-irc");
 const { writeJson, appendConnectionLog } = require("./local-files");
+const { CHANNEL_GROUPS, isChannelGroup, migrateChannels, selectTargetChannels } = require("./channel-groups");
+const { APP_ID, APP_ICON, configureTaskbar } = require("./app-identity");
 const {
   ensureChatScopes, getUserProfile, isClientConfigurationError, pollDeviceToken, refreshToken, requestDeviceCode, validateClientId, validateToken
 } = require("./twitch-oauth");
 
 app.setName("IdleChats IRC V2");
+if (process.platform === "win32") app.setAppUserModelId?.(APP_ID);
 app.setPath("userData", path.join(app.getPath("appData"), "IdleChats IRC V2"));
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
 
 const CHANNEL_PATTERN = /^[a-zA-Z0-9_]{1,25}$/;
-const MAX_CHANNELS_PER_ACCOUNT = 5;
 const LIVE_CHECK_INTERVAL_MS = 60_000;
 const DEFAULT_CHANNELS = ["gglippe", "macabeel", "dirmo1", "neegannnn", "lugontv", "stigalzera", "raku_m", "daldreak"];
 const TWITCH_CLIENT_ID = "mjqfe51tvku6pa0ymtkitjwlpi0x6k";
@@ -36,6 +38,8 @@ let discordShutdownReady = false;
 let discordShutdownTask;
 let channels = [];
 let accounts = [];
+let groupAccountOverrides = {};
+let groupChannelLimits = {};
 let clientId = "";
 let preferences = { minimizeToTray: false, liveOnly: true };
 let running = false;
@@ -76,11 +80,11 @@ function decryptTokens(value) {
 }
 
 async function saveSettings() {
-  await writeJson(settingsFile(), { preferences, discord: discordSettings });
+  await writeJson(settingsFile(), { preferences, discord: discordSettings, groupAccountOverrides, groupChannelLimits });
 }
 
 async function saveChannels() {
-  await writeJson(channelsFile(), channels);
+  await writeJson(channelsFile(), { version: 2, channels });
 }
 
 async function saveAccounts() {
@@ -96,6 +100,13 @@ async function saveAccounts() {
 
 async function loadData() {
   const savedSettings = await readJson(settingsFile(), {});
+  groupChannelLimits = Object.fromEntries(CHANNEL_GROUPS.map((group) => {
+    const value = savedSettings.groupChannelLimits?.[group.id];
+    return [group.id, Number.isSafeInteger(value) && value >= 1 ? value : group.maxChannels];
+  }));
+  groupAccountOverrides = Object.fromEntries(CHANNEL_GROUPS.map(({ id }) => [id,
+    Object.fromEntries(Object.entries(savedSettings.groupAccountOverrides?.[id] || {}).filter(([, value]) => typeof value === "boolean"))
+  ]));
   discordSettings = { url: DEFAULT_DISCORD_ROOM, compact: savedSettings.discord?.compact === true };
   try { if (savedSettings.discord?.url) discordSettings.url = require("./discord-session").channelUrl(savedSettings.discord.url); } catch {}
   clientId = TWITCH_CLIENT_ID;
@@ -104,9 +115,8 @@ async function loadData() {
     liveOnly: savedSettings.preferences?.liveOnly !== false
   };
   const savedChannels = await readJson(channelsFile(), null);
-  channels = Array.isArray(savedChannels)
-    ? savedChannels.filter((item) => item && CHANNEL_PATTERN.test(item.name || "")).map(({ name }) => ({ name }))
-    : DEFAULT_CHANNELS.map((name) => ({ name }));
+  channels = migrateChannels(savedChannels, DEFAULT_CHANNELS);
+  if (savedChannels === null || Array.isArray(savedChannels)) await saveChannels();
   const savedAccounts = await readJson(accountsFile(), []);
   accounts = [];
   for (const item of Array.isArray(savedAccounts) ? savedAccounts : []) {
@@ -140,30 +150,36 @@ function priorityOrderedChannels() {
     .map(({ channel }) => channel);
 }
 
-function targetChannels() {
-  const ordered = priorityOrderedChannels();
-  const eligible = preferences.liveOnly
-    ? ordered.filter(({ name }) => liveStates.get(name.toLowerCase())?.liveStatus === "live")
-    : ordered;
-  return eligible.slice(0, MAX_CHANNELS_PER_ACCOUNT).map(({ name }) => name.toLowerCase());
+function isGroupAccountActive(groupId, accountId) {
+  return groupAccountOverrides[groupId]?.[accountId] !== false;
+}
+
+function targetChannels(accountId) {
+  return selectTargetChannels(priorityOrderedChannels().filter((channel) => !accountId || isGroupAccountActive(channel.groupId, accountId)), preferences.liveOnly,
+    (name) => liveStates.get(name.toLowerCase())?.liveStatus === "live", groupChannelLimits);
 }
 
 function publicState() {
-  const desired = targetChannels();
+  const desiredByAccount = new Map(accounts.map((account) => [account.id, targetChannels(account.id)]));
   return {
     discord: discord?.state() || { ...discordSettings, active: false, status: "Fechado" },
     version: app.getVersion(),
     diagnostic: { ...diagnostic, results: diagnostic.results.map((result) => ({ ...result })) },
-    channels: priorityOrderedChannels().map(({ name }) => {
+    channelGroups: CHANNEL_GROUPS.map((group) => ({ ...group,
+      maxChannels: groupChannelLimits[group.id] ?? group.maxChannels,
+      activeAccountIds: accounts.filter((account) => isGroupAccountActive(group.id, account.id)).map((account) => account.id)
+    })),
+    channels: priorityOrderedChannels().map(({ name, groupId }) => {
       const live = liveStates.get(name.toLowerCase()) || { liveStatus: "unchecked", liveDetail: "", checkedAt: null };
       return {
         name,
+        groupId,
         ...live,
         accountStates: accounts.map((account) => {
           const state = safeAccountState(account.id);
           const joined = state.joinedChannels.includes(name.toLowerCase());
-          const target = desired.includes(name.toLowerCase());
-          return { id: account.id, login: account.login, state: !running ? "stopped" : joined ? "joined" : target ? state.state : "waiting", detail: state.detail || "" };
+          const target = desiredByAccount.get(account.id).includes(name.toLowerCase());
+          return { id: account.id, login: account.login, state: !isGroupAccountActive(groupId, account.id) ? "inactive" : !running ? "stopped" : joined ? "joined" : target ? state.state : "waiting", detail: state.detail || "" };
         })
       };
     }),
@@ -178,7 +194,7 @@ function publicState() {
         connectionState: running || ["authentication-error", "configuration-error", "reconnecting"].includes(state.state) ? state.state : "stopped",
         detail: state.detail,
         joinedChannels: state.joinedChannels,
-        targetChannels: running ? desired.length : 0
+        targetChannels: running ? desiredByAccount.get(account.id).length : 0
       };
     }),
     pendingLogins: [...pendingLogins.values()].map(({ id, userCode, verificationUri, expiresAt }) => ({ id, userCode, verificationUri, expiresAt })),
@@ -254,7 +270,7 @@ function setAccountState(id, next) {
 function desiredChannelsFor(accountId) {
   const account = accounts.find((item) => item.id === accountId);
   if (!running || !account || account.needsLogin || account.configurationError || !account.accessToken) return [];
-  return targetChannels();
+  return targetChannels(accountId);
 }
 
 function attachClient(account) {
@@ -399,7 +415,7 @@ function waitForChatRecovery(account, expectedChannels) {
     const check = () => {
       if (!running || isQuitting || !accounts.includes(account)) return finish({ status: "inconclusive", detail: "Teste interrompido." });
       if (account.needsLogin || account.configurationError) return finish({ status: "failed", detail: safeAccountState(account.id).detail });
-      const currentTargets = targetChannels();
+      const currentTargets = targetChannels(account.id);
       if (currentTargets.length !== expectedChannels.length || currentTargets.some((channel) => !expectedChannels.includes(channel))) {
         return finish({ status: "inconclusive", detail: "Os canais selecionados mudaram durante o teste. Tente novamente." });
       }
@@ -423,8 +439,8 @@ async function runConnectionTest(kind) {
   if (!accounts.length) throw new Error("Conecte uma conta Twitch antes de testar.");
   if (accounts.some((account) => account.refreshing)) throw new Error("Aguarde a renovação em andamento e tente novamente.");
   if (liveCheckBusy) throw new Error("Aguarde a consulta dos canais terminar e tente novamente.");
-  const expectedChannels = targetChannels();
-  if (!expectedChannels.length) throw new Error("É necessário ter ao menos um canal selecionado para confirmar a volta aos chats.");
+  const expectedByAccount = new Map(accounts.map((account) => [account.id, targetChannels(account.id)]));
+  if (![...expectedByAccount.values()].some((names) => names.length)) throw new Error("É necessário ter ao menos um canal selecionado para confirmar a volta aos chats.");
   const selectedAccounts = [...accounts];
   diagnostic = {
     busy: true, summary: kind === "renewal" ? "Renovando sessões e confirmando os chats…" : "Reconectando IRC e confirmando os chats…",
@@ -439,6 +455,8 @@ async function runConnectionTest(kind) {
   try {
     await Promise.all(selectedAccounts.map(async (account) => {
       try {
+        const expectedChannels = expectedByAccount.get(account.id);
+        if (!expectedChannels.length) return setResult(account, { status: "inconclusive", detail: "Nenhum canal selecionado para esta conta." });
         if (account.needsLogin || account.configurationError || !account.accessToken) {
           return setResult(account, { status: "failed", detail: safeAccountState(account.id).detail || "Autorize esta conta novamente." });
         }
@@ -539,9 +557,10 @@ async function checkChannelsOnline() {
   if (liveCheckBusy || !channels.length) return publicState();
   liveCheckBusy = true;
   try {
-    for (let i = 0; i < channels.length; i += 5) {
-      await Promise.all(channels.slice(i, i + 5).map(({ name }) => requestChannelStatus(name)));
-      if (i + 5 < channels.length) await new Promise((resolve) => setTimeout(resolve, 300));
+    const names = [...new Set(channels.map(({ name }) => name.toLowerCase()))];
+    for (let i = 0; i < names.length; i += 5) {
+      await Promise.all(names.slice(i, i + 5).map((name) => requestChannelStatus(name)));
+      if (i + 5 < names.length) await new Promise((resolve) => setTimeout(resolve, 300));
     }
   } finally {
     liveCheckBusy = false;
@@ -610,10 +629,12 @@ function createTray() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 507, height: 613, minWidth: 420, minHeight: 480, resizable: true,
-    title: "IdleChats IRC V2", backgroundColor: "#f8f7fb",
+    width: 458, height: 370, useContentSize: true, minWidth: 420, minHeight: 390, resizable: true,
+    autoHideMenuBar: true,
+    title: "IdleChats IRC V2", backgroundColor: "#f8f7fb", icon: APP_ICON,
     webPreferences: { preload: path.join(__dirname, "irc-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
+  configureTaskbar(mainWindow);
   mainWindow.loadFile(path.join(__dirname, "irc.html"));
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.on("minimize", () => { if (preferences.minimizeToTray) hideMainWindow(); });
@@ -803,26 +824,49 @@ ipcMain.handle("remove-account", async (_event, id) => {
   broadcastState();
   return publicState();
 });
-ipcMain.handle("add-channel", async (_event, value) => {
+ipcMain.handle("add-channel", async (_event, value, groupId = "pokeidleworld") => {
   const name = String(value || "").trim().replace(/^[@#]/, "");
+  if (!isChannelGroup(groupId)) throw new Error("Grupo de canais inválido.");
   if (!CHANNEL_PATTERN.test(name)) throw new Error("Use letras, números ou sublinhado (até 25 caracteres).");
-  if (channels.some((item) => item.name.toLowerCase() === name.toLowerCase())) throw new Error("Este canal já está cadastrado.");
-  channels.push({ name });
+  if (channels.some((item) => item.groupId === groupId && item.name.toLowerCase() === name.toLowerCase())) throw new Error("Este canal já está cadastrado neste grupo.");
+  channels.push({ name, groupId });
   await saveChannels();
   syncClients();
   void checkChannelsOnline();
   broadcastState();
   return publicState();
 });
-ipcMain.handle("remove-channel", async (_event, name) => {
-  channels = channels.filter((item) => item.name.toLowerCase() !== String(name).toLowerCase());
-  liveStates.delete(String(name).toLowerCase());
+ipcMain.handle("remove-channel", async (_event, name, groupId = "pokeidleworld") => {
+  if (!isChannelGroup(groupId)) throw new Error("Grupo de canais inválido.");
+  const key = String(name).toLowerCase();
+  channels = channels.filter((item) => item.groupId !== groupId || item.name.toLowerCase() !== key);
+  if (!channels.some((item) => item.name.toLowerCase() === key)) liveStates.delete(key);
   await saveChannels();
   syncClients();
   broadcastState();
   return publicState();
 });
 ipcMain.handle("toggle-chats", () => toggleChats());
+ipcMain.handle("set-group-channel-limit", async (_event, groupId, value) => {
+  if (!isChannelGroup(groupId)) throw new Error("Grupo de canais inválido.");
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error("Use um limite inteiro maior ou igual a 1.");
+  groupChannelLimits[groupId] = value;
+  await saveSettings();
+  syncClients();
+  broadcastState();
+  return publicState();
+});
+ipcMain.handle("set-group-account-active", async (_event, groupId, accountId, active) => {
+  if (!isChannelGroup(groupId)) throw new Error("Grupo de canais inválido.");
+  if (!accounts.some((account) => account.id === accountId)) throw new Error("Conta inválida.");
+  if (typeof active !== "boolean") throw new Error("Seleção de conta inválida.");
+  groupAccountOverrides[groupId] ||= {};
+  groupAccountOverrides[groupId][accountId] = active;
+  await saveSettings();
+  syncClients();
+  broadcastState();
+  return publicState();
+});
 ipcMain.handle("check-online", () => checkChannelsOnline());
 ipcMain.handle("set-minimize-to-tray", async (_event, value) => {
   preferences.minimizeToTray = Boolean(value);

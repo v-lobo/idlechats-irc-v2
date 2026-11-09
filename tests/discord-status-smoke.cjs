@@ -51,7 +51,8 @@ app.whenReady().then(async () => {
     assert.equal(await main.webContents.executeJavaScript("typeof window.idleChats.checkForUpdates"), "function");
     assert.equal(await main.webContents.executeJavaScript("typeof window.idleChats.openLatestRelease"), "function");
     await main.webContents.executeJavaScript('document.querySelector("#app-version").click()');
-    await until(() => main.webContents.executeJavaScript('document.querySelector("#update-status").textContent').then(value => value === "Você está na versão mais recente."), "Restored update check did not render its result");
+    await until(() => main.webContents.executeJavaScript('document.querySelector("#app-version").textContent').then(value => value === `v${app.getVersion()} ✅`), "Restored update check did not render its result");
+    assert.equal(await main.webContents.executeJavaScript('document.querySelector("#update-status").textContent'), "");
     await main.webContents.executeJavaScript('window.idleChats.discordAction("open")');
     const panel = BrowserWindow.getAllWindows().find(window => window !== main);
     const remote = panel.contentView.children.find(view => view.webContents && view.webContents !== panel.webContents).webContents;
@@ -139,6 +140,8 @@ app.whenReady().then(async () => {
     await setVoicePanel(connectedMarkup(targetRoom));
     await expectVoice("connected");
     await main.webContents.executeJavaScript('window.idleChats.discordAction("hide")');
+    assert.equal(await main.webContents.executeJavaScript('document.querySelector("#discord-voice span").textContent'), "Discord ativo");
+    assert.equal(await main.webContents.executeJavaScript('document.querySelector("#discord-voice").parentElement === document.querySelector("#connection-indicator").parentElement'), true);
     assert.equal(await main.webContents.executeJavaScript('document.querySelector("#discord-status").textContent'), "Conexão na sala configurada.");
     await screenshot("discord-presence-green.png", main.webContents);
     await setVoicePanel(connectedMarkup(targetRoom.replace("1551936385030824056", "1551936385030824057")));
@@ -153,6 +156,7 @@ app.whenReady().then(async () => {
     await expectVoice("connected");
     await main.webContents.executeJavaScript('window.idleChats.discordAction("stop")');
     assert.equal(await voiceState(), "closed");
+    assert.equal(await main.webContents.executeJavaScript('document.querySelector("#app-version").textContent'), `v${app.getVersion()} ✅`);
     console.log("PASS: presence confirms only the configured voice room, rejects page/chat/spoofed reports, updates while hidden and clears on disconnect; other Discord controls pass.");
     server.closeAllConnections();
     server.close();

@@ -6,6 +6,7 @@ const { pathToFileURL } = require("node:url");
 const { watchDiscordPageStatus } = require("./discord-page-status");
 const { discordPresence } = require("./discord-presence");
 const { closeDiscordPage, flushDiscordSession } = require("./discord-session-lifecycle");
+const { APP_ICON, configureTaskbar } = require("./app-identity");
 
 const DEFAULT_DISCORD_ROOM = "https://discord.com/channels/1516313244057337908/1551936385030824056";
 
@@ -113,8 +114,9 @@ class DiscordSession {
     isolated.setPermissionCheckHandler(() => false);
     if (!isolated.listenerCount("will-download")) isolated.on("will-download", event => event.preventDefault());
     this.window = new BrowserWindow({ width: 1100, height: 800, minWidth: 800, minHeight: 600,
-      title: "Discord · IdleChats", backgroundColor: "#313338", autoHideMenuBar: true,
+      title: "Discord · IdleChats", backgroundColor: "#313338", autoHideMenuBar: true, icon: APP_ICON,
       webPreferences: { preload: path.join(__dirname, "discord-preload.js"), sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    configureTaskbar(this.window);
     this.window.loadFile(path.join(__dirname, "discord.html"));
     this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     this.window.webContents.on("will-navigate", event => event.preventDefault());

@@ -1,10 +1,18 @@
 "use strict";
 
-const form = document.querySelector("#channel-form");
-const channelInput = document.querySelector("#channel-input");
-const channelList = document.querySelector("#channel-list");
-const channelCount = document.querySelector("#channel-count");
-const emptyState = document.querySelector("#empty-state");
+const channelManagers = ["pokeidleworld", "pokedream"].map((groupId) => {
+  const suffix = groupId === "pokedream" ? "-pokedream" : "";
+  const element = (id) => document.querySelector(`#${id}${suffix}`);
+  return {
+    groupId, form: element("channel-form"), input: element("channel-input"),
+    list: element("channel-list"), count: element("channel-count"),
+    emptyState: element("empty-state"),
+    accountList: element("group-account-list"), accountCount: element("group-account-count"),
+    liveUpdated: element("live-updated"),
+    settingsButton: element("group-settings"), settings: element("channels-section"),
+    limitForm: element("limit-form"), limitInput: element("channel-limit"), limitFeedback: element("limit-feedback")
+  };
+});
 const toggleButton = document.querySelector("#toggle-button");
 const addAccountButton = document.querySelector("#add-account");
 const accountList = document.querySelector("#account-list");
@@ -13,12 +21,11 @@ const pendingList = document.querySelector("#pending-list");
 const accountSummary = document.querySelector("#account-summary");
 const accountsSection = document.querySelector("#accounts-section");
 const accountsPanel = document.querySelector(".accounts-panel");
-const addSection = document.querySelector("#add-section");
 const liveOnlySetting = document.querySelector("#live-only");
 const traySetting = document.querySelector("#minimize-to-tray");
-const liveUpdated = document.querySelector("#live-updated");
 const checkLiveButton = document.querySelector("#check-live");
-const headline = document.querySelector("#headline");
+const lastChecked = document.querySelector("#last-checked");
+const expandedChannels = new Set();
 const subhead = document.querySelector("#subhead");
 const globalStatus = document.querySelector("#global-status");
 const notice = document.querySelector("#notice");
@@ -33,6 +40,7 @@ const diagnosticSummary = document.querySelector("#diagnostic-summary");
 const diagnosticResults = document.querySelector("#diagnostic-results");
 let state = { channels: [], accounts: [], pendingLogins: [], running: false, preferences: {} };
 let updateAvailable = false;
+let versionVerified = false;
 
 window.history.scrollRestoration = "manual";
 window.addEventListener("load", () => window.scrollTo(0, 0), { once: true });
@@ -51,6 +59,10 @@ function makeButton(text, className, handler, title = text) {
 
 function reportError(error) { notice.textContent = error?.message || String(error); }
 
+function quantity(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function formatLive(channel) {
   if (channel.liveStatus === "live") return "AO VIVO";
   if (channel.liveStatus === "offline") return "OFFLINE";
@@ -62,7 +74,7 @@ function formatLive(channel) {
 function formatAccountState(account) {
   if (account.connectionState === "configuration-error") return "Configuração Twitch";
   if (!account.authenticated) return "Precisa reconectar";
-  if (account.connectionState === "connected") return `${account.joinedChannels.length} JOIN(s) IRC confirmado(s)`;
+  if (account.connectionState === "connected") return quantity(account.joinedChannels.length, "presença");
   if (account.connectionState === "connecting") return "Conectando…";
   if (account.connectionState === "reconnecting") return "Reconectando…";
   if (account.connectionState === "authentication-error") return "Reconecte esta conta";
@@ -92,7 +104,8 @@ function renderPending() {
 function renderAccounts() {
   accountList.replaceChildren();
   const connected = state.accounts.filter((account) => account.authenticated && account.connectionState === "connected").length;
-  accountSummary.textContent = `${connected} no IRC · ${state.accounts.length} cadastrada(s)`;
+  const needsLogin = state.accounts.filter((account) => !account.authenticated).length;
+  accountSummary.textContent = needsLogin ? `${needsLogin} para reconectar` : quantity(connected, "conectada");
   accountCount.textContent = String(state.accounts.length);
   accountsPanel.classList.toggle("collapsed", !accountsSection.open);
   for (const account of state.accounts) {
@@ -114,14 +127,8 @@ function renderAccounts() {
     const copy = document.createElement("div");
     copy.className = "account-copy";
     const name = document.createElement("strong");
-    name.textContent = account.displayName || account.login || "Conta Twitch";
-    const detail = document.createElement("span");
-    detail.textContent = `@${account.login || "conta"} · ${account.authenticated ? `${account.joinedChannels.length} presença(s) IRC` : "precisa reconectar"}`;
-    if (account.connectionState === "configuration-error" || account.authenticated && ["connecting", "reconnecting"].includes(account.connectionState)) {
-      detail.textContent = `@${account.login} · ${account.detail || "Reconectando…"}`;
-    }
-    detail.title = account.detail || detail.textContent;
-    copy.append(name, detail);
+    name.textContent = account.login ? `@${account.login}` : account.displayName || "Conta Twitch";
+    copy.append(name);
     identity.append(copy);
     const pill = document.createElement("span");
     pill.className = "state-pill";
@@ -139,48 +146,100 @@ function renderAccounts() {
 }
 
 function renderChannels() {
-  channelCount.textContent = String(state.channels.length);
-  emptyState.hidden = state.channels.length > 0;
-  channelList.replaceChildren();
-  for (const channel of state.channels) {
-    const row = document.createElement("div");
-    row.className = "channel-row";
-    row.dataset.live = channel.liveStatus;
-    const dot = document.createElement("i");
-    dot.className = "live-dot";
-    const copy = document.createElement("div");
-    copy.className = "channel-copy";
-    const name = document.createElement("strong");
-    name.textContent = `#${channel.name}`;
-    const statuses = (channel.accountStates || []).map((account) => `${account.login}: ${account.state}`).join(" · ");
-    const detail = document.createElement("span");
-    detail.textContent = `${formatLive(channel)}${statuses ? ` · ${statuses}` : ""}`;
-    detail.title = channel.liveDetail || statuses;
-    copy.append(name, detail);
-    row.append(dot, copy, makeButton("×", "quiet remove", async () => {
-      try { state = await window.idleChats.removeChannel(channel.name); render(); }
-      catch (error) { reportError(error); }
-    }, `Remover ${channel.name}`));
-    channelList.append(row);
+  const checking = state.channels.some((channel) => channel.liveStatus === "checking");
+  checkLiveButton.disabled = !state.channels.length || checking;
+  lastChecked.textContent = checking ? "Consultando…" : state.liveCheckedAt
+    ? `Às ${new Date(state.liveCheckedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "A cada minuto";
+  lastChecked.title = "Consulta automática a cada minuto";
+  for (const manager of channelManagers) {
+    const { groupId, count, emptyState, list, liveUpdated } = manager;
+    const channels = state.channels.filter((channel) => channel.groupId === groupId);
+    count.textContent = String(channels.length);
+    emptyState.hidden = channels.length > 0;
+    list.replaceChildren();
+    const group = state.channelGroups?.find((item) => item.id === groupId);
+    const activeIds = group?.activeAccountIds || state.accounts.map((account) => account.id);
+    manager.accountCount.textContent = `${activeIds.length}/${state.accounts.length}`;
+    manager.accountList.replaceChildren();
+    if (!state.accounts.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty";
+      empty.textContent = "Adicione uma conta Twitch para configurar este grupo.";
+      manager.accountList.append(empty);
+    }
+    for (const account of state.accounts) {
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = activeIds.includes(account.id);
+      checkbox.dataset.accountId = account.id;
+      checkbox.addEventListener("change", async () => {
+        checkbox.disabled = true;
+        try { state = await window.idleChats.setGroupAccountActive(groupId, account.id, checkbox.checked); render(); }
+        catch (error) { checkbox.checked = !checkbox.checked; reportError(error); }
+        finally { checkbox.disabled = false; }
+      });
+      const name = document.createElement("span");
+      name.textContent = `@${account.login || account.displayName || "conta"}`;
+      label.append(checkbox, name);
+      manager.accountList.append(label);
+    }
+    const online = channels.filter((channel) => channel.liveStatus === "live").length;
+    liveUpdated.textContent = `${online} ao vivo · ${quantity(activeIds.length, "conta ativa", "contas ativas")}`;
+    if (document.activeElement !== manager.limitInput && !manager.limitInput.dataset.edited) manager.limitInput.value = group?.maxChannels ?? (groupId === "pokedream" ? 1 : 5);
+    for (const channel of channels) {
+      const row = document.createElement("div");
+      row.className = "channel-row";
+      row.dataset.live = channel.liveStatus;
+      const dot = document.createElement("i");
+      dot.className = "live-dot";
+      const copy = document.createElement("details");
+      copy.className = "channel-copy";
+      const key = `${groupId}:${channel.name.toLowerCase()}`;
+      copy.open = expandedChannels.has(key);
+      copy.addEventListener("toggle", () => { if (copy.isConnected) { if (copy.open) expandedChannels.add(key); else expandedChannels.delete(key); } });
+      const summary = document.createElement("summary");
+      const name = document.createElement("strong");
+      name.textContent = `#${channel.name}`;
+      const labels = { inactive: "inativa", joined: "presença confirmada", stopped: "parada", waiting: "aguardando", connected: "conectada", connecting: "conectando", reconnecting: "reconectando", "authentication-error": "reconecte a conta", "configuration-error": "erro de configuração" };
+      const statuses = document.createElement("div");
+      statuses.className = "channel-account-details";
+      for (const account of channel.accountStates || []) {
+        const status = document.createElement("p");
+        status.textContent = `@${account.login}: ${labels[account.state] || account.state}`;
+        status.title = account.detail || "";
+        statuses.append(status);
+      }
+      if (!statuses.childElementCount) statuses.textContent = "Nenhuma conta cadastrada.";
+      const detail = document.createElement("span");
+      const joined = (channel.accountStates || []).filter((account) => account.state === "joined").length;
+      detail.textContent = `${formatLive(channel).toLocaleLowerCase("pt-BR")} · ${quantity(joined, "presença")} ⌄`;
+      detail.title = channel.liveDetail || "Expandir estados por conta";
+      summary.append(name, detail);
+      copy.append(summary, statuses);
+      row.append(dot, copy, makeButton("×", "quiet remove", async () => {
+        try { state = await window.idleChats.removeChannel(channel.name, groupId); render(); }
+        catch (error) { reportError(error); }
+      }, `Remover ${channel.name}`));
+      list.append(row);
+    }
   }
 }
 
 function render() {
   renderDiscord();
-  if (!updateAvailable) appVersion.textContent = `v${state.version || "—"}`;
+  if (!updateAvailable) appVersion.textContent = `v${state.version || "—"}${versionVerified ? " ✅" : ""}`;
   if (state.pendingLogins?.length) accountsSection.open = true;
-  toggleButton.disabled = !state.channels.length || !state.accounts.some((account) => account.authenticated);
-  toggleButton.textContent = state.running ? "Parar conexões" : "Iniciar IRC";
+  toggleButton.disabled = !state.running && (!state.channels.length || !state.accounts.some((account) => account.authenticated));
+  toggleButton.textContent = state.running ? "Parar IRC" : "Iniciar IRC";
   const hasConnection = state.accounts.some((account) => account.authenticated && account.connectionState === "connected");
   const hasConfigurationError = state.accounts.some((account) => account.connectionState === "configuration-error");
   connectionIndicator.dataset.running = String(state.running && hasConnection);
-  connectionIndicator.querySelector("span").textContent = hasConfigurationError && !hasConnection ? "Configuração" : state.running ? hasConnection ? "IRC ativo" : "Reconectando…" : "Parado";
+  connectionIndicator.querySelector("span").textContent = hasConfigurationError && !hasConnection ? "IRC: configuração" : state.running ? hasConnection ? "IRC ativo" : "IRC reconectando…" : "IRC parado";
   const joined = state.accounts.reduce((total, account) => total + account.joinedChannels.length, 0);
-  headline.textContent = state.running ? "IRC em segundo plano" : "Conexões de chat";
-  subhead.textContent = `${joined} JOIN(s) IRC confirmado(s) · ${state.accounts.length} conta(s) · ${state.channels.length} canal(is).`;
-  globalStatus.textContent = state.running
-    ? "IRC confirma as entradas nos chats; o jogo pode levar alguns minutos para atualizar o bônus."
-    : "Twitch pronta para conectar por IRC.";
+  subhead.textContent = `${quantity(state.accounts.length, "conta")} · ${quantity(joined, "presença")}`;
+  subhead.title = "Presenças confirmadas pelo IRC; o jogo pode levar alguns minutos para atualizar o bônus.";
+  globalStatus.textContent = "";
   if (hasConfigurationError) globalStatus.textContent = "O cadastro Twitch do app precisa usar Client Type Public. Aguarde a correção do responsável pelo IdleChats.";
   else if (state.accounts.some((account) => account.connectionState === "authentication-error")) globalStatus.textContent = "Use + em Contas Twitch para autorizar novamente as contas indicadas.";
   if (state.message) notice.textContent = state.message;
@@ -193,11 +252,6 @@ function render() {
   renderChannels();
   liveOnlySetting.checked = state.preferences.liveOnly !== false;
   traySetting.checked = state.preferences.minimizeToTray === true;
-  const online = state.channels.filter((channel) => channel.liveStatus === "live").length;
-  liveUpdated.textContent = state.liveCheckedAt
-    ? `${online} ao vivo · consultado às ${new Date(state.liveCheckedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
-    : "Consulta de status a cada 1 minuto.";
-  checkLiveButton.disabled = !state.channels.length || state.channels.some((channel) => channel.liveStatus === "checking");
   const diagnostic = state.diagnostic || { busy: false, summary: "", results: [] };
   testRenewalButton.disabled = testReconnectButton.disabled = !state.running || diagnostic.busy;
   diagnosticSummary.textContent = diagnostic.summary;
@@ -222,16 +276,43 @@ async function runDiagnostic(kind) {
 testRenewalButton.addEventListener("click", () => { void runDiagnostic("renewal"); });
 testReconnectButton.addEventListener("click", () => { void runDiagnostic("reconnect"); });
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try {
-    state = await window.idleChats.addChannel(channelInput.value.trim());
-    channelInput.value = "";
-    addSection.open = false;
-    render();
-  } catch (error) { channelInput.setCustomValidity(error.message); channelInput.reportValidity(); }
-});
-channelInput.addEventListener("input", () => channelInput.setCustomValidity(""));
+for (const { groupId, form, input, settingsButton, settings, limitForm, limitInput, limitFeedback } of channelManagers) {
+  settingsButton.addEventListener("click", () => {
+    settings.open = !settings.open;
+    settingsButton.setAttribute("aria-expanded", String(settings.open));
+  });
+  settings.addEventListener("toggle", () => settingsButton.setAttribute("aria-expanded", String(settings.open)));
+  limitInput.addEventListener("input", () => { limitInput.dataset.edited = "true"; limitInput.setCustomValidity(""); limitFeedback.textContent = ""; });
+  limitForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = limitForm.querySelector("button");
+    button.disabled = true;
+    limitFeedback.textContent = "";
+    try {
+      state = await window.idleChats.setGroupChannelLimit(groupId, Number(limitInput.value));
+      delete limitInput.dataset.edited;
+      limitFeedback.textContent = "Salvo";
+      render();
+    } catch (error) { limitFeedback.textContent = error.message || String(error); }
+    finally { button.disabled = false; }
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    try {
+      state = await window.idleChats.addChannel(input.value.trim(), groupId);
+      input.value = "";
+      render();
+    } catch (error) { input.setCustomValidity(error.message); input.reportValidity(); }
+  });
+  input.addEventListener("input", () => input.setCustomValidity(""));
+}
+checkLiveButton.addEventListener("click", async () => {
+    checkLiveButton.disabled = true;
+    lastChecked.textContent = "Consultando…";
+    try { state = await window.idleChats.checkOnline(); render(); }
+    catch (error) { reportError(error); }
+    finally { renderChannels(); }
+  });
 
 addAccountButton.addEventListener("click", async () => {
   notice.textContent = "";
@@ -244,13 +325,6 @@ toggleButton.addEventListener("click", async () => {
   try { state = await window.idleChats.toggleChats(); }
   catch (error) { reportError(error); }
   render();
-});
-
-checkLiveButton.addEventListener("click", async () => {
-  checkLiveButton.disabled = true;
-  liveUpdated.textContent = "Consultando…";
-  try { state = await window.idleChats.checkOnline(); render(); }
-  catch (error) { reportError(error); }
 });
 
 liveOnlySetting.addEventListener("change", async () => {
@@ -271,7 +345,7 @@ function renderDiscord() {
   const voice = discord.voice || { state: "closed", label: "Fechado", detail: "Discord encerrado." };
   const indicator = document.querySelector("#discord-voice");
   indicator.dataset.state = voice.state;
-  indicator.querySelector("span").textContent = voice.label;
+  indicator.querySelector("span").textContent = voice.state === "connected" ? "Discord ativo" : `Discord: ${voice.label.toLocaleLowerCase("pt-BR")}`;
   indicator.title = voice.detail;
   document.querySelector("#discord-status").textContent = voice.state === "connected" ? "Conexão na sala configurada." : `${voice.detail}${discord.hidden ? " · em segundo plano" : ""}`;
   document.querySelector("#discord-status").title = discord.status || "Fechado";
@@ -290,6 +364,13 @@ async function discordAction(action, value) {
   } catch (error) { document.querySelector("#discord-notice").textContent = error.message; return false; }
 }
 for (const action of ["open", "room", "stop"]) document.querySelector(`#discord-${action}`).addEventListener("click", () => discordAction(action));
+const discordOptions = document.querySelector("#discord-options");
+const discordControls = document.querySelector("#discord-controls");
+discordOptions.addEventListener("click", () => {
+  discordControls.open = !discordControls.open;
+  discordOptions.setAttribute("aria-expanded", String(discordControls.open));
+});
+discordControls.addEventListener("toggle", () => discordOptions.setAttribute("aria-expanded", String(discordControls.open)));
 document.querySelector("#discord-url").addEventListener("input", event => { event.target.dataset.edited = "true"; });
 document.querySelector("#discord-form").addEventListener("submit", async event => {
   event.preventDefault();
@@ -299,6 +380,8 @@ document.querySelector("#discord-form").addEventListener("submit", async event =
 
 checkUpdatesButton.addEventListener("click", async () => {
   checkUpdatesButton.disabled = true;
+  versionVerified = false;
+  if (!updateAvailable) appVersion.textContent = `v${state.version || "—"}`;
   updateStatus.textContent = "Verificando…";
   try {
     if (updateAvailable) {
@@ -315,8 +398,10 @@ checkUpdatesButton.addEventListener("click", async () => {
         checkUpdatesButton.title = "Clique novamente para abrir a atualização no GitHub";
         updateStatus.textContent = "Nova versão disponível. Clique no texto novamente para baixar.";
       } else {
-        appVersion.textContent = `v${result.currentVersion} 🆗`;
-        updateStatus.textContent = "Você está na versão mais recente.";
+        versionVerified = true;
+        appVersion.textContent = `v${result.currentVersion} ✅`;
+        checkUpdatesButton.title = "Você está na versão mais recente. Clique para verificar novamente.";
+        updateStatus.textContent = "";
       }
     }
   } catch (error) {

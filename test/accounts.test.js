@@ -37,7 +37,7 @@ function setup(refreshToken, savedAccounts = [], oauthOverrides = {}) {
     "./local-files": { writeJson: async (file, value) => { writes.push({ file, value }); }, appendConnectionLog: async () => {} }
   }, clock.globals, `
     module.exports = { attachClient, renewAccountToken, syncClients, recoverConnections, stopChats, startChats, publicState, loadData, restoreAccounts, pollAccountLogin, pendingLogins, runConnectionTest,
-      setChannels(value) { channels = value.map((name) => ({ name })); preferences.liveOnly = false; },
+      setChannels(value) { channels = value.map((name) => ({ name, groupId: "pokeidleworld" })); preferences.liveOnly = false; },
       clients, setAccounts(value) { accounts = value; running = true; }, setQuitting() { isQuitting = true; } };`);
   const accounts = Array.from({ length: 4 }, (_, index) => ({
     id: String(index), login: `example${index}`, accessToken: "oldtoken", refreshToken: "refresh",
